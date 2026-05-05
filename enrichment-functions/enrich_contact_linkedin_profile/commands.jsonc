@@ -1,0 +1,61 @@
+// commands.jsonc — enrich_contact_linkedin_profile @ 1.0.0
+//
+// Single Harvest call per row via generic_http_request. Recipe-supplied
+// API key (mirrors score_account_via_latitude / classify_via_latitude
+// security model — baked into compiled playbook headers).
+//
+// Pipeline:
+//   1. build_request    — JS: compose Harvest URL with optional flags.
+//   2. harvest_call     — HTTP: GET to api.harvest-api.com/linkedin/profile.
+//   3. compose_output   — JS: normalize profile envelope, hoist convenience fields.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.linkedin_url             required
+//   row.input.harvest_api_key          required
+//   row.input.include_about_profile    optional (default false)
+//   row.input.find_email               optional (default false)
+//   row.input.skip_smtp                optional (default false; only meaningful with find_email)
+//   row.input.main_only                optional (default false)
+//   row.input.timeout_ms               optional (default 30000)
+
+{
+  "commands": [
+    {
+      "alias": "build_request",
+      "description": "Compose Harvest URL with optional flags. Returns { url, timeout_ms } for the HTTP step. Throws if linkedin_url or harvest_api_key are missing.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; if (!i.linkedin_url) throw new Error('linkedin_url missing'); if (!i.harvest_api_key) throw new Error('harvest_api_key missing'); const params = ['url=' + encodeURIComponent(i.linkedin_url)]; if (i.main_only === true) params.push('main=true'); if (i.include_about_profile === true) params.push('includeAboutProfile=true'); if (i.find_email === true) params.push('findEmail=true'); if (i.find_email === true && i.skip_smtp === true) params.push('skipSmtp=true'); const url = 'https://api.harvest-api.com/linkedin/profile?' + params.join('&'); return { url: url, timeout_ms: i.timeout_ms || 30000 };"
+      }
+    },
+
+    {
+      "alias": "harvest_call",
+      "description": "GET Harvest /linkedin/profile. Auth via X-API-Key header (caller-supplied — baked into compiled playbook).",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.url)",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request.result.data.url}}",
+        "headers": {
+          "X-API-Key": "{{row.input.harvest_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "timeout_ms": "{{build_request.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const body = r.body || r.data || r; if (!body) return { ok: false, error: 'no body', raw: null }; const status = body.status; const error = body.error; const element = body.element; if (status === 'error' || error) return { ok: false, error: error || 'harvest returned error status', raw: body }; if (!element) return { ok: false, error: 'no element in response', raw: body }; return { ok: true, element: element, raw: body }; }"
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Normalize Harvest profile envelope into the function's declared output schema. Hoist convenience fields (current_role, name, location, etc.) so downstream functions don't re-parse.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const hc = row.harvest_call && row.harvest_call.result && row.harvest_call.result.data; const ok = hc && hc.ok === true; const opts = { include_about_profile: i.include_about_profile === true, find_email: i.find_email === true, skip_smtp: i.skip_smtp === true, main_only: i.main_only === true }; const verifSignals = { harvest: { ran: !!hc, ok: !!ok, error: ok ? null : ((hc && hc.error) || 'harvest_call did not run'), response_excerpt: hc && hc.raw ? JSON.stringify(hc.raw).slice(0, 500) : null }, options: opts }; if (!ok) { return { profile_json: null, current_role: null, current_company_name: null, current_company_linkedin_url: null, current_title: null, name: null, headline: null, location: null, about: null, experience: [], email: null, about_this_profile: null, verification_signals: verifSignals }; } const p = hc.element || {}; const stripUrl = function(u) { if (!u) return null; let s = String(u); const l = s.toLowerCase(); if (l.startsWith('https://')) s = s.slice(8); else if (l.startsWith('http://')) s = s.slice(7); if (s.toLowerCase().startsWith('www.')) s = s.slice(4); if (s.endsWith('/')) s = s.slice(0, -1); return s; }; const extractDomain = function(u) { if (!u) return null; const stripped = stripUrl(u); if (!stripped) return null; return stripped.split('/')[0].split('?')[0] || null; }; const positions = Array.isArray(p.position) ? p.position : (Array.isArray(p.experience) ? p.experience : []); const cur = positions[0] || null; const curCompany = cur ? (cur.companyName || cur.company || null) : null; const curCompanyLi = cur ? (cur.companyLinkedinUrl || cur.companyUrl || null) : null; const curCompanyDomain = curCompany && cur && cur.companyWebsite ? extractDomain(cur.companyWebsite) : null; const current_role = cur ? { title: cur.title || cur.position || null, company_name: curCompany, company_linkedin_url: curCompanyLi, company_domain: curCompanyDomain, started_at: cur.startDate || cur.start_date || cur.starts_at || null, location: cur.location || null } : null; const fn = p.firstName || p.first_name || (p.name && p.name.first) || null; const ln = p.lastName || p.last_name || (p.name && p.name.last) || null; const fullName = (fn || ln) ? [fn, ln].filter(Boolean).join(' ') : (p.fullName || p.name || null); const name = (fn || ln || fullName) ? { first: fn, last: ln, full: fullName } : null; const loc = p.location || p.geo || null; const location = loc ? { city: loc.city || loc.locality || null, state: loc.state || loc.region || null, country: loc.country || loc.countryName || null, country_code: loc.countryCode || loc.country_code || null } : null; let emailOut = null; if (opts.find_email) { const e = p.email || p.contactInfo && p.contactInfo.email || null; if (e) { const addr = typeof e === 'string' ? e : (e.address || e.value || null); const isCatchAll = !!(e && (e.isCatchAll || e.is_catch_all)); const smtpVerified = !!(e && (e.smtpVerified || e.smtp_verified)); const deliverable = e && typeof e.deliverable === 'boolean' ? e.deliverable : null; emailOut = { address: addr, deliverable: deliverable, smtp_verified: smtpVerified, is_catch_all: isCatchAll, is_risky: isCatchAll || (opts.skip_smtp === true) || (deliverable === false) }; } } let aboutThis = null; if (opts.include_about_profile) { aboutThis = p.aboutThisProfile || p.about_this_profile || null; } return { profile_json: p, current_role: current_role, current_company_name: curCompany, current_company_linkedin_url: curCompanyLi, current_title: current_role ? current_role.title : null, name: name, headline: p.headline || null, location: location, about: p.about ? String(p.about).slice(0, 2000) : null, experience: positions, email: emailOut, about_this_profile: aboutThis, verification_signals: verifSignals };"
+      }
+    }
+  ]
+}

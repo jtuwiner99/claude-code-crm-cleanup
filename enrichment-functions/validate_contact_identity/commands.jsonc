@@ -1,0 +1,60 @@
+// commands.jsonc — validate_contact_identity @ 1.0.0
+//
+// Pipeline:
+//   1. deterministic_match — JS: name + company match against profile_json
+//   2. ai_tiebreaker       — deeplineagent: gpt-5-mini judgment when signals split
+//   3. compose_output      — JS: emit identity_match + reasoning
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.profile_json             required (from enrich_contact_linkedin_profile)
+//   row.input.expected_first_name      required
+//   row.input.expected_last_name       required
+//   row.input.expected_company_name    required
+//   row.input.expected_company_domain  optional
+//   row.input.expected_title           optional
+
+{
+  "commands": [
+    {
+      "alias": "deterministic_match",
+      "description": "Deterministic name + company comparison. Name uses normalized Levenshtein with nickname dictionary; company searches all experience entries for a fuzzy name match OR domain match.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const p = i.profile_json || null; if (!p) return { profile_present: false, name_match: { matched: false, similarity: 0, normalized_first: null, normalized_last: null, profile_first: null, profile_last: null }, company_match: { matched: false, matched_experience_index: -1, matched_via: null, profile_companies: [] } }; const norm = function(s) { if (!s) return ''; return String(s).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]/g,''); }; const NICKNAMES = { bill:'william', will:'william', billy:'william', bob:'robert', rob:'robert', bobby:'robert', dick:'richard', rick:'richard', mike:'michael', mick:'michael', jim:'james', jimmy:'james', jack:'john', johnny:'john', tom:'thomas', tommy:'thomas', dan:'daniel', danny:'daniel', dave:'david', steve:'steven', stephen:'steven', joe:'joseph', tony:'anthony', chris:'christopher', matt:'matthew', alex:'alexander', sam:'samuel', ed:'edward', ted:'edward', kate:'katherine', kathy:'katherine', katie:'katherine', liz:'elizabeth', beth:'elizabeth', maggie:'margaret', meg:'margaret', sue:'susan', susie:'susan', jen:'jennifer', jenny:'jennifer', cathy:'catherine' }; const expandNick = function(n) { return NICKNAMES[n] || n; }; const lev = function(a, b) { if (a === b) return 0; if (!a.length) return b.length; if (!b.length) return a.length; const dp = []; for (let i = 0; i <= a.length; i++) { dp.push([i]); } for (let j = 1; j <= b.length; j++) { dp[0].push(j); } for (let i = 1; i <= a.length; i++) { for (let j = 1; j <= b.length; j++) { dp[i].push(a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1])); } } return dp[a.length][b.length]; }; const sim = function(a, b) { if (!a || !b) return 0; if (a === b) return 1; const longer = a.length >= b.length ? a : b; const shorter = a.length < b.length ? a : b; if (!longer.length) return 1; return (longer.length - lev(longer, shorter)) / longer.length; }; const exp_first = norm(i.expected_first_name); const exp_last = norm(i.expected_last_name); const profile_first_raw = p.firstName || (p.name && p.name.first) || (p.fullName ? String(p.fullName).split(' ')[0] : null); const profile_last_raw = p.lastName || (p.name && p.name.last) || (p.fullName ? String(p.fullName).split(' ').slice(-1)[0] : null); const prof_first = norm(profile_first_raw); const prof_last = norm(profile_last_raw); const exp_first_expanded = expandNick(exp_first); const prof_first_expanded = expandNick(prof_first); const first_sim = Math.max(sim(exp_first, prof_first), sim(exp_first_expanded, prof_first_expanded)); const last_sim = sim(exp_last, prof_last); const overall_sim = (first_sim + last_sim) / 2; const name_matched = overall_sim >= 0.85 || (first_sim >= 0.7 && last_sim >= 0.95); const exp_company = norm(i.expected_company_name); const exp_domain_raw = i.expected_company_domain ? String(i.expected_company_domain).toLowerCase().replace(/^https?:\\/\\//,'').replace(/^www\\./,'').split('/')[0].split('?')[0] : null; const positions = Array.isArray(p.position) ? p.position : (Array.isArray(p.experience) ? p.experience : []); const profile_companies = positions.map(function(e, idx) { return { index: idx, name: e.companyName || e.company || null, website: e.companyWebsite || e.company_domain || null, linkedin_url: e.companyLinkedinUrl || e.companyUrl || null }; }); let company_matched_via = null; let company_matched_index = -1; for (let idx = 0; idx < positions.length; idx++) { const e = positions[idx]; const exp_co_name = norm(e.companyName || e.company || ''); const exp_co_domain = e.companyWebsite ? String(e.companyWebsite).toLowerCase().replace(/^https?:\\/\\//,'').replace(/^www\\./,'').split('/')[0].split('?')[0] : null; const name_match = exp_company && sim(exp_company, exp_co_name) >= 0.8; const domain_match = exp_domain_raw && exp_co_domain && (exp_co_domain === exp_domain_raw || exp_co_domain.indexOf(exp_domain_raw) !== -1 || exp_domain_raw.indexOf(exp_co_domain) !== -1); if (domain_match) { company_matched_via = 'domain'; company_matched_index = idx; break; } if (name_match) { company_matched_via = 'name'; company_matched_index = idx; break; } } return { profile_present: true, name_match: { matched: name_matched, similarity: Math.round(overall_sim * 100) / 100, normalized_first: exp_first, normalized_last: exp_last, profile_first: profile_first_raw, profile_last: profile_last_raw }, company_match: { matched: company_matched_index !== -1, matched_experience_index: company_matched_index, matched_via: company_matched_via, profile_companies: profile_companies } };"
+      }
+    },
+
+    {
+      "alias": "ai_tiebreaker",
+      "description": "AI tiebreaker — runs only when deterministic name and company signals split (one matches, one doesn't). gpt-5-mini, agency default.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "(function(){ const dm = row.deterministic_match && row.deterministic_match.result && row.deterministic_match.result.data; if (!dm || !dm.profile_present) return false; const nm = dm.name_match.matched; const cm = dm.company_match.matched; const fundamentalMismatch = dm.name_match.similarity < 0.5; if (fundamentalMismatch) return false; if (nm && cm) return false; return nm !== cm; })()",
+      "payload": {
+        "model": "openai/gpt-5-mini",
+        "system": "ROLE:\nYou are a contact-identity matching engine. Your job is to determine whether a scraped LinkedIn profile belongs to a specific person at a specific company, given expected name + company + (optional) title and the profile's name + work history.\n\nGOAL:\nReturn { is_match: true } only when the LinkedIn profile is clearly the same person at the same company (current OR prior). Return false when the match is weak, the profile is for a different person at a similar company, or the profile is for the same person but with no evidence they ever worked at the expected company.\n\nINPUT FORMAT:\n{\n  \"expected_first_name\": \"<string>\",\n  \"expected_last_name\": \"<string>\",\n  \"expected_company_name\": \"<string>\",\n  \"expected_title\": \"<string or null>\",\n  \"profile_first_name\": \"<string or null>\",\n  \"profile_last_name\": \"<string or null>\",\n  \"profile_headline\": \"<string or null>\",\n  \"profile_companies\": [{\"name\": \"<string>\", \"website\": \"<string or null>\", \"linkedin_url\": \"<string or null>\"}]\n}\n\nLOGIC:\n1. Treat first-name nicknames as equivalent (Bill = William, Bob = Robert, etc.).\n2. Title is a SOFT signal only — never reject on title alone.\n3. Company match: search all profile_companies. The expected company can match by name (fuzzy) or by domain. Brand-family / regional subsidiary names are matches (Acme = Acme Inc = Acme Holdings); same generic name + different industries is NOT a match.\n4. When both name and company signals lean match: return is_match=true with reasoning.\n5. When ambiguous: return is_match=false. Default to false on uncertainty.\n\nReturn only valid JSON. No markdown.",
+        "prompt": "{\n  \"expected_first_name\": \"{{row.input.expected_first_name}}\",\n  \"expected_last_name\": \"{{row.input.expected_last_name}}\",\n  \"expected_company_name\": \"{{row.input.expected_company_name}}\",\n  \"expected_title\": \"{{row.input.expected_title}}\",\n  \"profile_first_name\": \"{{deterministic_match.result.data.name_match.profile_first}}\",\n  \"profile_last_name\": \"{{deterministic_match.result.data.name_match.profile_last}}\",\n  \"profile_headline\": \"{{row.input.profile_json.headline}}\",\n  \"profile_companies\": {{deterministic_match.result.data.company_match.profile_companies}}\n}",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "is_match": { "type": "boolean" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["is_match", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Combine deterministic + AI signals into final identity_match verdict.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const dm = row.deterministic_match && row.deterministic_match.result && row.deterministic_match.result.data; const aiRes = row.ai_tiebreaker && row.ai_tiebreaker.result && row.ai_tiebreaker.result.object; const aiRan = !!row.ai_tiebreaker; const empty_name_match = { matched: false, similarity: 0, normalized_first: null, normalized_last: null, profile_first: null, profile_last: null }; const empty_company_match = { matched: false, matched_experience_index: -1, matched_via: null, profile_companies: [] }; if (!dm || !dm.profile_present) { return { identity_match: 'mismatch', identity_reasoning: 'No profile_json provided — cannot validate identity.', name_match: empty_name_match, company_match: empty_company_match, ai_tiebreaker: { ran: false, is_match: null, reasoning: null }, verification_signals: { profile_present: false } }; } const nm = dm.name_match; const cm = dm.company_match; const aiTiebreaker = { ran: aiRan, is_match: aiRes ? aiRes.is_match : null, reasoning: aiRes ? aiRes.reasoning : null }; let verdict = 'mismatch'; let reasoning = ''; if (nm.similarity < 0.5) { verdict = 'mismatch'; reasoning = 'Name similarity ' + nm.similarity + ' is below the fundamental-mismatch threshold (0.5). Profile is for a different person.'; } else if (nm.matched && cm.matched) { verdict = 'confirmed'; reasoning = 'Name matched (similarity ' + nm.similarity + ') and company matched at experience index ' + cm.matched_experience_index + ' via ' + cm.matched_via + '.'; } else if (aiRan && aiRes && aiRes.is_match === true) { verdict = nm.matched && !cm.matched ? 'weak' : (cm.matched && !nm.matched ? 'weak' : 'confirmed'); reasoning = 'Deterministic signals split (name_match=' + nm.matched + ', company_match=' + cm.matched + '); AI tiebreaker confirmed match: ' + (aiRes.reasoning || ''); } else if (aiRan && aiRes && aiRes.is_match === false) { verdict = 'mismatch'; reasoning = 'Deterministic signals split (name_match=' + nm.matched + ', company_match=' + cm.matched + '); AI tiebreaker said no match: ' + (aiRes.reasoning || ''); } else { verdict = 'weak'; reasoning = 'Name match=' + nm.matched + ', company match=' + cm.matched + '; AI tiebreaker did not run or returned no result. Caller should treat as low-confidence.'; } return { identity_match: verdict, identity_reasoning: reasoning, name_match: nm, company_match: cm, ai_tiebreaker: aiTiebreaker, verification_signals: { profile_present: true, deterministic: { name_matched: nm.matched, company_matched: cm.matched }, ai: aiTiebreaker } };"
+      }
+    }
+  ]
+}

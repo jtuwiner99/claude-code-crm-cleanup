@@ -1,0 +1,30 @@
+// commands.jsonc — detect_job_change @ 1.0.0
+//
+// Pure deterministic JS — single step. No provider calls, no AI.
+//
+// Logic:
+//   1. If profile_json is null OR position[] is empty → status='unclear'.
+//   2. Pick position[0] as profile current_role.
+//   3. Compare current_role.companyName vs on_record_company_name (fuzzy name OR domain match).
+//   4. If match → status='still_there'.
+//   5. If different → status='moved'; populate new_* fields from current_role.
+//   6. Compute started_role_within_3_months from current_role.startDate.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.profile_json              required (from enrich_contact_linkedin_profile)
+//   row.input.on_record_company_name    required
+//   row.input.on_record_company_domain  optional
+
+{
+  "commands": [
+    {
+      "alias": "compare",
+      "description": "Compare profile current employer vs on-record company. Emit status + new_* fields + recency boolean.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const p = i.profile_json || null; const norm = function(s) { if (!s) return ''; return String(s).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]/g,''); }; const stripDomain = function(u) { if (!u) return null; let s = String(u).toLowerCase().replace(/^https?:\\/\\//,'').replace(/^www\\./,'').split('/')[0].split('?')[0]; return s || null; }; const lev = function(a, b) { if (a === b) return 0; if (!a.length) return b.length; if (!b.length) return a.length; const dp = []; for (let x = 0; x <= a.length; x++) { dp.push([x]); } for (let y = 1; y <= b.length; y++) { dp[0].push(y); } for (let x = 1; x <= a.length; x++) { for (let y = 1; y <= b.length; y++) { dp[x].push(a[x-1] === b[y-1] ? dp[x-1][y-1] : 1 + Math.min(dp[x-1][y-1], dp[x-1][y], dp[x][y-1])); } } return dp[a.length][b.length]; }; const sim = function(a, b) { if (!a || !b) return 0; if (a === b) return 1; const longer = a.length >= b.length ? a : b; const shorter = a.length < b.length ? a : b; if (!longer.length) return 1; return (longer.length - lev(longer, shorter)) / longer.length; }; const empty = { status: 'unclear', new_company_name: null, new_company_domain: null, new_company_linkedin_url: null, new_title: null, new_role_started_at: null, started_role_within_3_months: false, verification_signals: { profile_current_company: null, profile_current_domain: null, on_record_normalized: norm(i.on_record_company_name), comparison: { name_match: false, domain_match: false } } }; if (!p) return empty; const positions = Array.isArray(p.position) ? p.position : (Array.isArray(p.experience) ? p.experience : []); if (!positions.length) return empty; const cur = positions[0]; const profCo = cur.companyName || cur.company || null; const profCoDomain = stripDomain(cur.companyWebsite || cur.company_domain || null); const profCoLi = cur.companyLinkedinUrl || cur.companyUrl || null; const profTitle = cur.title || cur.position || null; const profStart = cur.startDate || cur.start_date || cur.starts_at || null; const onCoNorm = norm(i.on_record_company_name); const profCoNorm = norm(profCo); const onDomain = stripDomain(i.on_record_company_domain); const nameSim = sim(onCoNorm, profCoNorm); const nameMatch = nameSim >= 0.8; const domainMatch = !!(onDomain && profCoDomain && (onDomain === profCoDomain || profCoDomain.indexOf(onDomain) !== -1 || onDomain.indexOf(profCoDomain) !== -1)); const stillThere = nameMatch || domainMatch; const compareSignals = { profile_current_company: profCo, profile_current_domain: profCoDomain, on_record_normalized: onCoNorm, comparison: { name_match: nameMatch, name_similarity: Math.round(nameSim * 100) / 100, domain_match: domainMatch } }; let withinThree = false; let parsedStart = null; if (profStart) { const d = new Date(profStart); if (!isNaN(d.getTime())) { parsedStart = d; const now = new Date(); const monthsDiff = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()); withinThree = monthsDiff < 3 && (now.getTime() - d.getTime()) >= 0; } } if (stillThere) { return { status: 'still_there', new_company_name: profCo, new_company_domain: profCoDomain, new_company_linkedin_url: profCoLi, new_title: profTitle, new_role_started_at: profStart, started_role_within_3_months: false, verification_signals: compareSignals }; } return { status: 'moved', new_company_name: profCo, new_company_domain: profCoDomain, new_company_linkedin_url: profCoLi, new_title: profTitle, new_role_started_at: profStart, started_role_within_3_months: withinThree, verification_signals: compareSignals };"
+      }
+    }
+  ]
+}

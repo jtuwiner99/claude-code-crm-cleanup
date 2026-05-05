@@ -1,0 +1,131 @@
+name: find_contact_linkedin_url
+version: 1.1.0
+status: ported_from_clay  # Net-new agency abstraction; pattern lifted from Ontra's Clay-side AI URL-resolution step.
+description: >
+  Resolve a contact's LinkedIn profile URL from name + company when the
+  URL isn't already on the row. Two-tier strategy: (1) Prospeo
+  `enrich_person` (the agency contact-side default — single-call, accepts
+  first_name + last_name + company_website / company_name as match keys,
+  returns a verified LinkedIn URL plus profile data); (2) AI web-research
+  fallback (deeplineagent with web-search) when tier 1 returns no URL or
+  a non-profile URL. Recipe-level skip pattern: `run_if_js: "!row.input.linkedin_url"`
+  on this function so rows that already have a hand-validated URL
+  bypass the waterfall entirely.
+  Identity verification is NOT this function's job — `validate_contact_identity`
+  runs downstream against the Harvest scrape to confirm the URL belongs
+  to the right person. This function's only job is "find a plausible
+  candidate URL".
+
+inputs:
+  - name: first_name
+    type: string
+    required: true
+    description: Contact's first name (CRM-cleaned).
+  - name: last_name
+    type: string
+    required: true
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name (output of `normalize_domain_and_name` if account-side function ran first, otherwise the CRM-clean name).
+  - name: company_domain
+    type: string
+    required: false
+    description: >
+      Company domain (e.g. `acme.com`). Strongly improves Apollo match
+      precision — Apollo's `people_match` accepts `domain` as a
+      disambiguator. Pass when available.
+  - name: email
+    type: string
+    required: false
+    description: Contact's email address. Apollo prefers email when present (highest-precision match key).
+  - name: company_summary
+    type: string
+    required: false
+    description: >
+      Pre-generated company summary (output of `company_summary_from_website`).
+      Used by tier 2's web-research prompt for context. Optional but
+      improves tier-2 hit rate.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 30000
+
+outputs:
+  - name: linkedin_url
+    type: string
+    nullable: true
+    description: Resolved LinkedIn profile URL (`linkedin.com/in/...`), or null if both tiers failed.
+  - name: linkedin_url_source
+    type: string
+    description: One of `tier_1_apollo_match` | `tier_2_web_research` | `unfound`.
+  - name: found
+    type: boolean
+    description: True iff `linkedin_url` is a non-null, well-formed LinkedIn profile URL.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit: `{ tier_1: { ran, url_found, raw_url, reasoning }, tier_2: { ran, url_found, raw_url, reasoning } }`.
+
+providers:
+  - name: prospeo_enrich_person
+    role: tier-1 single-call enrichment by full name + company_website (or email or company_name).
+    note: >
+      Prospeo's `enrich_person` is the agency contact-side default
+      (set 2026-05-04 — supersedes Apollo `people_match` as tier 1 for
+      contact URL discovery). Highest-precision match key is `email`,
+      second-best is `(first_name, last_name, company_website)`. Returns
+      `linkedin_url` plus the full enriched person payload (email,
+      mobile when `enrich_mobile=true`, title, location). 1 Prospeo
+      credit per call (10 if mobile enabled — but mobile is OFF by
+      default here; this function is URL-only). When tier-1 returns a
+      URL, it goes into `linkedin_url` directly without further
+      verification — `validate_contact_identity` (downstream) handles
+      the trust layer.
+  - name: deeplineagent
+    role: tier-2 web-research fallback when Prospeo misses or returns a non-profile URL.
+    note: >
+      Mirrors `linkedin_url_verified`'s tier-2 pattern. Agent searches
+      "<name> <company> linkedin profile" and returns a URL containing
+      `linkedin.com/in/`. Default deeplineagent model (currently
+      gpt-5.4-mini with web-search tools).
+
+ai_calls:
+  - tier: 2_web_research
+    primitive: deeplineagent
+    estimated_tokens: 2500
+    runs_when: tier_1 returned no URL OR returned a URL that doesn't contain `linkedin.com/in/`
+estimated_cost_usd: 0.006  # tier 1 (Prospeo ~$0.006) always; tier 2 only on miss (~$0.01).
+
+invariants:
+  - When `found=true`, `linkedin_url` is non-null AND contains `linkedin.com/in/`.
+  - When `found=false`, `linkedin_url` is null. Caller MUST gate downstream Harvest call on `found=true`.
+  - This function does NOT verify identity — only candidate-URL discovery. Identity verification is `validate_contact_identity`'s job.
+  - Tier-1 Apollo match is single-call. No retries. Apollo network/4xx/5xx → tier 2 fires.
+  - Tier-2 fires when tier-1 returned no URL. Cost-aware: don't run this function on rows that already have a verified URL — gate with `run_if_js: "!row.input.linkedin_url"` at the recipe level.
+
+clay_origin:
+  source: ontra-contact-model-static-cleanup
+  exported_at: 2026-05-04
+  port_notes: >
+    Ontra's Clay table used a Claygent (gpt-4o-mini) AI step to find the
+    URL from name+company+title+email priority logic. Substituted with
+    Prospeo `enrich_person` as tier 1 (provider lookup) +
+    deeplineagent web research as tier 2 (matching the architectural
+    pattern in `linkedin_url_verified`). The agency function family is
+    consistent: tier-1 cheap-provider, tier-2 AI fallback.
+    v1.1.0 (2026-05-04): tier-1 provider set to Prospeo per the
+    contact-side provider preference. Apollo `people_match` is
+    available as a swap option in client overrides for engagements
+    where Apollo's coverage outperforms Prospeo on a representative
+    sample, but Prospeo is the agency default.
+    Identity verification (Ontra's "did this person ever work at the SF
+    company" Boolean check + "select correct experience index") was
+    intentionally NOT folded into this function — it's
+    `validate_contact_identity`'s responsibility, after the Harvest
+    scrape runs.
+
+related:
+  - upstream: normalize_domain_and_name (when company_name_clean isn't already on the row)
+  - downstream: enrich_contact_linkedin_profile
+  - sibling: linkedin_url_verified (account-side analog — verified COMPANY URL via Lusha→AI→PDL)

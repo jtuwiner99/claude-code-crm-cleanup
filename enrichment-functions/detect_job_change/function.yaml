@@ -1,0 +1,100 @@
+name: detect_job_change
+version: 1.0.0
+status: ported_from_clay  # Direct port of Ontra's "still there or moved" + job-change-recency formula.
+description: >
+  Compare a contact's scraped current employer (from
+  `enrich_contact_linkedin_profile`) against the on-record company on
+  the CRM row. Pure deterministic — no AI calls. Emits a status
+  (`still_there` | `moved` | `unclear`) plus the new role's company,
+  domain, title, and start date when moved. The
+  `started_role_within_3_months` boolean is a direct port of Ontra's
+  Clay formula (`moment().diff(moment(start_date), "months") < 3`)
+  — a hot signal for high-value-contact triggers.
+
+inputs:
+  - name: profile_json
+    type: object
+    required: true
+    description: >
+      Raw Harvest profile payload from
+      `enrich_contact_linkedin_profile.profile_json`. Function reads
+      `position[]` / `experience[]`. When null, status is `unclear`.
+  - name: on_record_company_name
+    type: string
+    required: true
+    description: Company name on the CRM row at the time of enrichment.
+  - name: on_record_company_domain
+    type: string
+    required: false
+    description: >
+      Company domain on the CRM row. Strongly improves comparison
+      precision when company names are generic ("Acme") or have
+      regional/subsidiary variants. Pass when available.
+
+outputs:
+  - name: status
+    type: string
+    description: One of `still_there` | `moved` | `unclear`. `unclear` covers profile_json=null AND profile current-role missing.
+  - name: new_company_name
+    type: string
+    nullable: true
+    description: Profile's CURRENT company name. Populated only when status=`moved` (or status=`still_there`, where it equals on_record_company_name).
+  - name: new_company_domain
+    type: string
+    nullable: true
+    description: Profile's current-company domain (extracted from companyWebsite or companyLinkedinUrl). Populated only when status=`moved`.
+  - name: new_company_linkedin_url
+    type: string
+    nullable: true
+  - name: new_title
+    type: string
+    nullable: true
+    description: Profile's current title. Populated when status=`moved`.
+  - name: new_role_started_at
+    type: string
+    nullable: true
+    description: Start date of profile's current role (ISO date string when available; raw provider format otherwise). Populated when status=`moved`.
+  - name: started_role_within_3_months
+    type: boolean
+    description: True when status=`moved` AND new_role_started_at is within the last 3 months. Direct port of Ontra's job-change-recency formula. False when status=`still_there` or `unclear`.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit: `{ profile_current_company, profile_current_domain,
+      on_record_normalized, comparison: { name_match: bool, domain_match: bool } }`.
+
+providers: []  # Pure deterministic JS — no provider calls.
+ai_calls: []
+estimated_cost_usd: 0  # No external calls.
+
+invariants:
+  - Pure deterministic. Same inputs → same outputs every time.
+  - When `profile_json` is null → status=`unclear`, all `new_*` fields null, started_role_within_3_months=false.
+  - When `profile_json.position[]` is empty → status=`unclear`.
+  - When profile current-company matches on-record company (name fuzzy-match >= 0.8 OR domain match) → status=`still_there`. New_* fields equal the on-record values.
+  - When profile current-company differs from on-record AND on-record is found in PRIOR experience → status=`moved`, with new_* populated from current role.
+  - When profile current-company differs AND on-record isn't anywhere in profile experience → status=`moved` (best-effort assumption that the CRM is stale; downstream identity validation should have caught true mismatches before this function runs).
+  - `started_role_within_3_months` = `(start_date is parseable AND (now - start_date) < 90 days)`. Calculated against UTC `now` at runtime.
+
+clay_origin:
+  source: ontra-contact-model-ongoing-job-change-tracking AND static-cleanup
+  exported_at: 2026-05-04
+  port_notes: >
+    Ontra's Ongoing Job Change Tracking workbook ran a Clay job-change
+    detection signal and emitted a "Started role last 3 months" boolean
+    via `moment().diff(moment(date), "months") < 3`. Direct port of
+    that formula. The Static Cleanup workbook had a separate "(o) Moved
+    On" boolean derived from an Employment Verification table — folded
+    here as the primary `status` output.
+    Holding-entity / side-project handling that Ontra used for
+    work-experience-index resolution is NOT in this function — that
+    logic is implicit in `validate_contact_identity` (which uses the
+    same fuzzy-company match). When status=`moved`, the function picks
+    `position[0]` as the new role; if a contact has multiple concurrent
+    roles (board seat + day job), the first one wins. Customers who
+    need finer handling for that edge case can read `profile_json.position[]`
+    directly at the recipe level.
+
+related:
+  - upstream: enrich_contact_linkedin_profile, validate_contact_identity (typically gated on identity_match !== 'mismatch' before this runs)
+  - downstream: score_contact_fit (consumes status to drive the still_there gate)

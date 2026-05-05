@@ -1,0 +1,190 @@
+name: enrich_contact_linkedin_profile
+version: 1.0.0
+status: ported_from_clay  # Ported in spirit from Ontra's contact-cleanup MixRank step; net-new agency abstraction.
+description: >
+  Fetch a contact's full LinkedIn profile from a verified profile URL using
+  Harvest's direct API (`api.harvest-api.com/linkedin/profile`). Returns
+  the raw provider payload plus convenience-extracted fields (current role,
+  current company, location, headline) that downstream functions
+  (`validate_contact_identity`, `detect_job_change`,
+  `classify_multi_dim_via_latitude`) consume directly without re-parsing
+  the raw object. Optional flags expose Harvest's add-on capabilities:
+  `find_email` (SMTP-verified email finding) and `include_about_profile`
+  (the "About this profile" popup, useful for QA / trust signals like
+  account-creation date and recent name changes).
+  Single Harvest call per row — cost-predictable. Cache the verifying
+  payload so downstream functions don't re-spend a credit.
+
+inputs:
+  - name: linkedin_url
+    type: string
+    required: true
+    description: >
+      Verified contact LinkedIn URL (e.g. `https://www.linkedin.com/in/williamhgates`).
+      Caller is responsible for resolving + verifying the URL upstream — typically via
+      `find_contact_linkedin_url` when the URL isn't already on the row.
+  - name: harvest_api_key
+    type: string
+    required: true
+    description: >
+      Caller-supplied Harvest API key. Same security model as
+      classify_via_latitude / score_account_via_latitude — baked into the
+      compiled playbook headers because Deepline templating doesn't
+      support env-var interpolation. Rotate keys → re-compile.
+  - name: include_about_profile
+    type: boolean
+    required: false
+    default: false
+    description: >
+      When true, Harvest scrapes the "About this profile" popup
+      (account-creation date, recent name changes). Costs more credits
+      per call. Useful for trust/QA on outbound — flag accounts created
+      <30 days ago as low-confidence.
+  - name: find_email
+    type: boolean
+    required: false
+    default: false
+    description: >
+      When true, Harvest also performs SMTP-verified email finding for the
+      profile and emits the email on the response. Marked risky for
+      catch-all domains. Costs more credits than baseline. Use this when
+      cleanup + email-finding can collapse into one call; use the
+      separate `find_contact_email` waterfall (Layer-3 plugin, not yet
+      built) when you want provider waterfalling.
+  - name: skip_smtp
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Only meaningful when `find_email=true`. Skips Harvest's SMTP
+      verification — returns all generated email candidates with minimal
+      validation (just MX record check). Cheaper but less reliable.
+  - name: main_only
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Harvest's `main=true` flag — returns only the main version of the
+      profile (up to 5 experiences, 2 educations, 2 skills) for fewer
+      credits. Set true when downstream functions only need current_role +
+      one prior employer (e.g. job-change-loop recipe); leave false when
+      validating identity or running multi-dim classification that
+      benefits from richer context.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 30000
+    description: HTTP timeout for the Harvest call.
+
+outputs:
+  - name: profile_json
+    type: object
+    nullable: true
+    description: >
+      Full Harvest response payload at `result.body.element`. Contains
+      firstName, lastName, headline, about, location, position[],
+      education[], skills[], etc. Null when Harvest call failed.
+      Downstream functions read raw fields off this object — the
+      convenience-extracted fields below are denormalizations for callers
+      that don't want to re-parse.
+  - name: current_role
+    type: object
+    nullable: true
+    description: >
+      Convenience extraction:
+      `{ title, company_name, company_linkedin_url, company_domain, started_at, location }`.
+      Picks the FIRST experience entry (Harvest sorts current-first). When
+      the contact has multiple concurrent roles, only the first wins —
+      callers needing all concurrent roles read `profile_json.position[]`
+      directly.
+  - name: current_company_name
+    type: string
+    nullable: true
+    description: Same as `current_role.company_name`. Hoisted for use as a direct input to `detect_job_change`.
+  - name: current_company_linkedin_url
+    type: string
+    nullable: true
+  - name: current_title
+    type: string
+    nullable: true
+  - name: name
+    type: object
+    nullable: true
+    description: "`{ first, last, full }`. Used as direct input to `validate_contact_identity`."
+  - name: headline
+    type: string
+    nullable: true
+    description: LinkedIn headline string ("VP Marketing at Acme | ex-Stripe").
+  - name: location
+    type: object
+    nullable: true
+    description: "`{ city, state, country, country_code }` — normalized from Harvest's location object."
+  - name: about
+    type: string
+    nullable: true
+    description: Profile "About" / summary section. Truncated at 2000 chars.
+  - name: experience
+    type: array
+    nullable: true
+    description: Pass-through of `profile_json.position[]` for downstream use. Empty array on Harvest failure.
+  - name: email
+    type: object
+    nullable: true
+    description: >
+      Only populated when `find_email=true`. Shape:
+      `{ address, deliverable, smtp_verified, is_catch_all, is_risky }`.
+      `is_risky=true` when domain is catch-all or SMTP unverified.
+  - name: about_this_profile
+    type: object
+    nullable: true
+    description: >
+      Only populated when `include_about_profile=true`. Shape:
+      `{ profile_created_at, recent_name_changes, joined_via }` (fields
+      depend on Harvest's response — passed through as-is).
+  - name: verification_signals
+    type: object
+    description: >
+      Audit: `{ harvest: {ran, ok, error, response_excerpt}, options: {include_about_profile, find_email, skip_smtp, main_only} }`.
+
+providers:
+  - name: generic_http_request
+    role: HTTP call to Harvest's `/linkedin/profile` endpoint. Same pattern as `score_account_via_latitude`'s Latitude call.
+    note: >
+      Harvest is invoked via `generic_http_request` because Deepline has
+      no native Harvest tool wrapper. A companion helper at
+      the HarvestAPI profile extractor (companion script in your project)
+      mirrors the existing `harvestapi.py` (which targets Harvest's
+      company endpoint) — both modules read `HARVEST_API_KEY` from env at
+      compile time, but the function-level contract here uses
+      `row.input.harvest_api_key` so recipes can override per-project.
+
+ai_calls: []  # Pure data fetch — no AI in this function.
+estimated_cost_usd: 0.001  # Baseline Harvest credit per call. Higher with find_email / include_about_profile.
+
+invariants:
+  - One Harvest call per row. No retries, no fallbacks — cost is predictable.
+  - When the Harvest call fails (network / 4xx / 5xx / unparseable response), `profile_json=null` and all convenience fields are null. Caller MUST gate on `profile_json !== null` before consuming downstream.
+  - `current_role` is the FIRST experience entry only. Multi-role contacts need to read `profile_json.position[]` directly.
+  - `email` is null unless `find_email=true` was passed. `email.is_risky=true` is the gate to NOT trust deliverability.
+  - `linkedin_url` MUST be a profile URL (`linkedin.com/in/...`), not a company URL. The function does not validate this — caller's responsibility (typically `find_contact_linkedin_url` returns only profile URLs).
+
+clay_origin:
+  source: ontra-contact-model-static-cleanup
+  exported_at: 2026-05-04
+  port_notes: >
+    Ontra's Clay table used MixRank `enrich-person-with-mixrank-v2` for
+    profile scraping. Substituted with Harvest direct API per the agency
+    provider rule: "LinkedIn-direct beats provider-metadata for trust
+    signals" (see enrichment-functions-catalog SKILL.md). Harvest is
+    invoked via `generic_http_request` (no native Deepline tool); a
+    sibling extractor at the HarvestAPI profile extractor (companion script in your project)
+    mirrors the existing `harvestapi.py` pattern for the company endpoint.
+    The convenience-extracted fields (`current_role`, `current_company_name`,
+    etc.) match how Ontra's downstream tables consumed the MixRank output —
+    making the port drop-in for any customer following the same recipe.
+
+related:
+  - upstream: find_contact_linkedin_url (or the row already has linkedin_url)
+  - downstream: validate_contact_identity, detect_job_change, classify_multi_dim_via_latitude
+  - sibling: linkedin_url_verified (account-side analog — verified COMPANY URL + firmographics)
+  - extractor: the HarvestAPI profile extractor

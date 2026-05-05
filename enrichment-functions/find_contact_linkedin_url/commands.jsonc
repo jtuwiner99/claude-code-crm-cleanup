@@ -1,0 +1,72 @@
+// commands.jsonc — find_contact_linkedin_url @ 1.1.0
+//
+// Two-tier waterfall:
+//   1. prospeo_enrich_person — agency contact-side default; single-call enrich by name + company_website (or email)
+//   2. deeplineagent         — web research fallback when tier 1 misses or returns non-profile URL
+//
+// v1.1.0 (2026-05-04): tier-1 provider swapped Apollo → Prospeo per contact-side
+// provider preference. Apollo `people_match` remains available as a client-override swap.
+//
+// Recipe-level: skip this function entirely when row.input.linkedin_url is already present:
+//   run_if_js: "!row.input.linkedin_url"
+//
+// Identity verification is NOT this function's job — see `validate_contact_identity`.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.first_name           required
+//   row.input.last_name            required
+//   row.input.company_name_clean   required
+//   row.input.company_domain       optional (preferred over company_name_clean for Prospeo)
+//   row.input.email                optional (Prospeo's highest-precision match key)
+//   row.input.company_summary      optional (tier-2 web-research context)
+//   row.input.timeout_ms           optional (default 30000)
+
+{
+  "commands": [
+    {
+      "alias": "tier_1_prospeo_enrich",
+      "description": "Prospeo enrich_person — single call by (email) or (first_name + last_name + company_website). Returns enriched person record with linkedin_url. 1 Prospeo credit per call.",
+      "operation": "prospeo_enrich_person",
+      "tool": "prospeo_enrich_person",
+      "run_if_js": "Boolean(row.input && (row.input.email || (row.input.first_name && row.input.last_name)))",
+      "payload": {
+        "first_name": "{{row.input.first_name}}",
+        "last_name": "{{row.input.last_name}}",
+        "company_website": "{{row.input.company_domain}}",
+        "company_name": "{{row.input.company_name_clean}}",
+        "email": "{{row.input.email}}"
+      }
+    },
+
+    {
+      "alias": "tier_2_web_research",
+      "description": "Web-research fallback when tier 1 missed or returned a non-profile URL. Default deeplineagent model with web-search tools.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "(function(){ const t1 = row.tier_1_prospeo_enrich && row.tier_1_prospeo_enrich.result; if (!t1) return true; const url = (t1.person && t1.person.linkedin_url) || (t1.data && t1.data.person && t1.data.person.linkedin_url) || t1.linkedin_url || (t1.data && t1.data.linkedin_url) || null; if (!url) return true; return String(url).toLowerCase().indexOf('linkedin.com/in/') === -1; })()",
+      "payload": {
+        "system": "You are a research agent that finds the canonical LinkedIn PROFILE page for a given person at a given company. Use web search. The profile URL must contain 'linkedin.com/in/' to count (NOT 'linkedin.com/company/'). If you find a high-confidence match, return it. If you cannot find one, return null.",
+        "prompt": "Find the LinkedIn PROFILE URL for this person.\n\nFirst name: {{row.input.first_name}}\nLast name: {{row.input.last_name}}\nCompany: {{row.input.company_name_clean}}\nCompany domain: {{row.input.company_domain}}\nEmail: {{row.input.email}}\n\nFor context, here is a website-derived summary of their company:\n{{row.input.company_summary}}\n\nSearch for: \"{{row.input.first_name}} {{row.input.last_name}} {{row.input.company_name_clean}} linkedin profile\". Their profile URL must contain 'linkedin.com/in/'. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "linkedin_url": { "type": ["string", "null"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["linkedin_url"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Pick whichever tier produced a valid linkedin.com/in/ URL; emit declared outputs.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const stripUrl = function(u) { if (!u) return null; let s = String(u); const l = s.toLowerCase(); if (l.startsWith('https://')) s = s.slice(8); else if (l.startsWith('http://')) s = s.slice(7); if (s.toLowerCase().startsWith('www.')) s = s.slice(4); if (s.endsWith('/')) s = s.slice(0, -1); return s; }; const isProfileUrl = function(u) { return !!(u && String(u).toLowerCase().indexOf('linkedin.com/in/') !== -1); }; const t1 = row.tier_1_prospeo_enrich && row.tier_1_prospeo_enrich.result; const t1RawUrl = t1 ? ((t1.person && t1.person.linkedin_url) || (t1.data && t1.data.person && t1.data.person.linkedin_url) || t1.linkedin_url || (t1.data && t1.data.linkedin_url) || null) : null; const t1Url = isProfileUrl(t1RawUrl) ? stripUrl(t1RawUrl) : null; const t2 = row.tier_2_web_research && row.tier_2_web_research.result && row.tier_2_web_research.result.object; const t2RawUrl = t2 ? t2.linkedin_url : null; const t2Url = isProfileUrl(t2RawUrl) ? stripUrl(t2RawUrl) : null; const linkedin_url = t1Url || t2Url || null; const found = !!linkedin_url; const linkedin_url_source = t1Url ? 'tier_1_prospeo_enrich' : (t2Url ? 'tier_2_web_research' : 'unfound'); return { linkedin_url: linkedin_url, found: found, linkedin_url_source: linkedin_url_source, verification_signals: { tier_1: { ran: !!row.tier_1_prospeo_enrich, url_found: !!t1Url, raw_url: t1RawUrl, reasoning: null }, tier_2: { ran: !!row.tier_2_web_research, url_found: !!t2Url, raw_url: t2RawUrl, reasoning: t2 ? t2.reasoning : null } } };"
+      }
+    }
+  ]
+}

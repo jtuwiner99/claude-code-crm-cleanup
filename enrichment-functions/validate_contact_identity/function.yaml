@@ -1,0 +1,121 @@
+name: validate_contact_identity
+version: 1.0.0
+status: ported_from_clay  # Folds Ontra's "verify person" Boolean check + "select correct experience index" + name/company tiebreakers into one function.
+description: >
+  Confirm that the scraped LinkedIn profile (from `enrich_contact_linkedin_profile`)
+  belongs to the right person. Two-tier strategy: (1) deterministic
+  comparison of expected name + company against the profile's name +
+  experience history; (2) a single AI tiebreaker (gpt-5-mini, agency
+  default) only when deterministic signals are split (e.g. name matches
+  but no experience entry shows the expected company, or vice versa).
+  Emits `identity_match: confirmed | weak | mismatch` plus structured
+  reasoning. Designed to be the gate before any further enrichment —
+  recipes typically gate downstream functions on `identity_match !== 'mismatch'`.
+
+inputs:
+  - name: profile_json
+    type: object
+    required: true
+    description: >
+      Raw Harvest profile payload from
+      `enrich_contact_linkedin_profile.profile_json`. Function reads
+      `firstName`, `lastName`, `fullName`, `name.first`, `name.last`,
+      `position[]` / `experience[]` directly. When null, function emits
+      `identity_match: mismatch` (no profile to validate against).
+  - name: expected_first_name
+    type: string
+    required: true
+    description: First name on the CRM row.
+  - name: expected_last_name
+    type: string
+    required: true
+  - name: expected_company_name
+    type: string
+    required: true
+    description: >
+      Current-or-prior company on the CRM row. Function searches the
+      profile's full experience history for a match — not just the
+      current role — because contacts frequently move between scrape
+      and CRM update.
+  - name: expected_company_domain
+    type: string
+    required: false
+    description: Disambiguator. When passed, deterministic match also checks experience entries' companyWebsite/companyDomain fields.
+  - name: expected_title
+    type: string
+    required: false
+    description: >
+      Optional softer signal. Function uses this for the AI tiebreaker
+      only — never causes a deterministic mismatch on its own (titles
+      change too frequently).
+  - name: harvest_api_key
+    type: string
+    required: false
+    description: >
+      Not used by this function directly; included in the standard
+      contact-side function signature for recipe-author convenience
+      (downstream functions consume it). Safe to omit.
+
+outputs:
+  - name: identity_match
+    type: string
+    description: One of `confirmed` | `weak` | `mismatch`. `confirmed` = both name AND company match deterministically. `weak` = one matches but the other doesn't, AND AI tiebreaker leans match. `mismatch` = AI tiebreaker leans no-match, OR name fundamentally mismatches.
+  - name: identity_reasoning
+    type: string
+    description: 2-3 sentence explanation of which signals fired.
+  - name: name_match
+    type: object
+    description: "`{ matched: bool, similarity: number, normalized_first, normalized_last, profile_first, profile_last }`."
+  - name: company_match
+    type: object
+    description: >
+      `{ matched: bool, matched_experience_index: number, matched_via:
+      'name' | 'domain' | null, profile_companies[] }`. `matched_via`
+      tells the recipe-level audit whether the company was matched on
+      name fuzzy-match or domain comparison.
+  - name: ai_tiebreaker
+    type: object
+    description: "`{ ran: bool, is_match: bool | null, reasoning: string | null }`. `ran=false` when deterministic signals were unanimous (both match or name fundamentally mismatched)."
+  - name: verification_signals
+    type: object
+    description: Audit-trail container with all sub-step results.
+
+providers:
+  - name: deeplineagent
+    role: AI tiebreaker (gpt-5-mini, agency default) — runs only when deterministic signals are split.
+
+ai_calls:
+  - tier: tiebreaker
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 1000
+    runs_when: name_match.matched XOR company_match.matched (one matches, one doesn't)
+estimated_cost_usd: 0.0008  # AI tiebreaker only when deterministic signals split (~30-40% of rows in pilot data).
+
+invariants:
+  - When `profile_json` is null → `identity_match: mismatch`, `name_match.matched=false`, `company_match.matched=false`, `ai_tiebreaker.ran=false`.
+  - When name AND company both match deterministically → `identity_match: confirmed`, `ai_tiebreaker.ran=false` (no AI cost).
+  - When name fundamentally mismatches (similarity < 0.5) → `identity_match: mismatch`, `ai_tiebreaker.ran=false`.
+  - When deterministic signals are split (name matches but no company match found, OR company match found but name is weak) → AI tiebreaker fires, output is `confirmed` (AI says match) or `weak` (AI uncertain) or `mismatch` (AI says no match).
+  - Function emits no `linkedin_url` field — it doesn't change the URL, just judges it. Caller continues to use the URL from `find_contact_linkedin_url` / row.input.
+  - Title is NEVER a hard signal. Senior-to-junior or department-cross title changes happen all the time within the same person at the same company.
+
+clay_origin:
+  source: ontra-contact-model-static-cleanup
+  exported_at: 2026-05-04
+  port_notes: >
+    Ontra's Clay table had three separate steps: (1) verify name +
+    company + title from internet sources (gpt-4o-mini); (2) AI
+    Boolean check "has contact ever worked at SF company" with fuzzy
+    company matching + domain variants; (3) work-experience-index
+    resolution with side-project penalty + holding-entity detection.
+    Folded into one function because they share the same input
+    (profile_json) and emit one decision (identity_match). The
+    deterministic-first / AI-tiebreaker split is faithful to Ontra's
+    spirit but more cost-efficient — Ontra ran the AI on every row;
+    this function gates the AI on deterministic signal split.
+
+related:
+  - upstream: enrich_contact_linkedin_profile
+  - downstream: detect_job_change, classify_multi_dim_via_latitude (typically gated on `identity_match !== 'mismatch'`)
+  - sibling: linkedin_url_verified's `tier_1_verify` / `tier_2_verify` (account-side analog; same matching-engine philosophy)
