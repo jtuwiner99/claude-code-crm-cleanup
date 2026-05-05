@@ -1,0 +1,88 @@
+# default_contact_cleanup — Default spine for one-time contact cleanup
+#
+# A reference composition. Customer recipes live in their client repo at
+# `your enrichment-recipe.yaml` and typically copy
+# this layout, overriding env-bound inputs (api keys, project IDs) and
+# the scoring-model load path.
+#
+# Inputs (per row, from CSV / CRM / etc.):
+#   - first_name, last_name        (required)
+#   - company_name_clean           (required — typically the on-record current employer)
+#   - linkedin_url                 (optional — when present, URL discovery is skipped)
+#   - company_domain               (optional disambiguator for URL discovery)
+#   - email                        (optional, improves Apollo people_match precision)
+#   - company_summary              (optional, recommended — improves URL fallback + persona classification)
+#   - on_record_company_name       (defaults to company_name_clean when not passed)
+#   - on_record_company_domain     (defaults to company_domain when not passed)
+#   - on_record_title              (optional softer signal for identity validation)
+#
+# Outputs (final row state, written to CRM by recipe-level downstream):
+#   - linkedin_url                                    (verified, persistent across reruns)
+#   - profile_json                                    (cached for rerun thrift)
+#   - identity_match                                  (confirmed | weak | mismatch)
+#   - status                                          (still_there | moved | unclear) + new_company_* fields when moved
+#   - dimensions_result.persona.category              (e.g. 'revenue_operations')
+#   - dimensions_result.seniority.category            (e.g. 'vp_or_head')
+#   - score                                           (ideal | acceptable | not_ideal)
+
+steps:
+  # 1. URL discovery — skipped when row already has linkedin_url
+  - uses: find_contact_linkedin_url
+    run_if_js: "!row.input.linkedin_url"
+    inputs:
+      first_name: "{{row.input.first_name}}"
+      last_name: "{{row.input.last_name}}"
+      company_name_clean: "{{row.input.company_name_clean}}"
+      company_domain: "{{row.input.company_domain}}"
+      email: "{{row.input.email}}"
+      company_summary: "{{row.input.company_summary}}"
+
+  # 2. Profile scrape via Harvest direct API
+  - uses: enrich_contact_linkedin_profile
+    inputs:
+      linkedin_url: "{{row.input.linkedin_url || find_contact_linkedin_url.linkedin_url}}"
+      harvest_api_key: "{{env.HARVEST_API_KEY}}"
+    gate: "{{Boolean(row.input.linkedin_url || find_contact_linkedin_url.found)}}"
+
+  # 3. Identity validation — gates everything downstream
+  - uses: validate_contact_identity
+    inputs:
+      profile_json: "{{enrich_contact_linkedin_profile.profile_json}}"
+      expected_first_name: "{{row.input.first_name}}"
+      expected_last_name: "{{row.input.last_name}}"
+      expected_company_name: "{{row.input.on_record_company_name || row.input.company_name_clean}}"
+      expected_company_domain: "{{row.input.on_record_company_domain || row.input.company_domain}}"
+      expected_title: "{{row.input.on_record_title}}"
+    gate: "{{validate_contact_identity.identity_match !== 'mismatch'}}"
+
+  # 4. Job-change detection (deterministic — no AI cost)
+  - uses: detect_job_change
+    inputs:
+      profile_json: "{{enrich_contact_linkedin_profile.profile_json}}"
+      on_record_company_name: "{{row.input.on_record_company_name || row.input.company_name_clean}}"
+      on_record_company_domain: "{{row.input.on_record_company_domain || row.input.company_domain}}"
+
+  # 5. Persona + Seniority — single Latitude call (multi-dim)
+  - uses: classify_multi_dim_via_latitude
+    inputs:
+      dimensions:
+        - name: persona
+          categories_json: !load preset_categories/contact_department.yaml
+        - name: seniority
+          categories_json: !load preset_categories/contact_seniority.yaml
+      parameters:
+        job_title: "{{enrich_contact_linkedin_profile.current_title}}"
+        company_summary: "{{row.input.company_summary}}"
+        profile_about: "{{enrich_contact_linkedin_profile.about}}"
+        headline: "{{enrich_contact_linkedin_profile.headline}}"
+      latitude_api_key: "{{env.LATITUDE_API_KEY}}"
+      latitude_project_id: "{{env.LATITUDE_PROJECT_ID}}"
+
+  # 6. Aggregate into fit verdict (deterministic JS)
+  - uses: score_contact_fit
+    inputs:
+      still_there: "{{detect_job_change.status === 'still_there'}}"
+      persona: "{{classify_multi_dim_via_latitude.dimensions_result.persona.category}}"
+      seniority: "{{classify_multi_dim_via_latitude.dimensions_result.seniority.category}}"
+      identity_match: "{{validate_contact_identity.identity_match}}"
+      tier_rules_json: !load_customer scoring-models/contact.json

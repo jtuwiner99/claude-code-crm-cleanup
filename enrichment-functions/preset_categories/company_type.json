@@ -1,0 +1,122 @@
+[
+  {
+    "value": "SaaS",
+    "label": "SaaS",
+    "description": "A company that sells software, technology, or a platform as its core product, where customers pay for access to the tool itself \u2014 typically through subscriptions, seat-based pricing, or usage-based licensing. The company sells software tooling to users who pay for access to the tool itself \u2014 not platforms where the software is incidental to a content, social, or creator-driven network.",
+    "positive_signals": [
+      "Subscription or seat-based pricing model (monthly or annual plans) for software access",
+      "'Book a Demo' or 'Request a Demo' CTA prominently on the website",
+      "Self-serve sign-up or free trial for a software product",
+      "Product pages describing software features, integrations, or platform capabilities",
+      "Job listings for software engineers, product managers, or customer success roles focused on a software product",
+      "Customers described as 'users' with references to onboarding, user accounts, or dashboards"
+    ],
+    "negative_signals": [
+      "Core business is delivering human services (consulting, campaign management, design work) even if tech-enabled",
+      "Primary revenue from selling physical products via an online storefront",
+      "Brick-and-mortar locations as the primary mode of business",
+      "Consumer-facing platform or marketplace where the primary value is the content, community, or network created by users \u2014 not the software tooling itself (e.g., social networks, content platforms, creator economy platforms, language-learning apps)",
+      "Platform whose primary revenue model is taking a commission or percentage on transactions between users rather than charging for software seats or subscriptions to use tools",
+      "AI research organization or tech company whose products are consumed as consumer utilities or APIs powering other applications, rather than traditional seat-based SaaS",
+      "Two-sided marketplace or platform connecting creators/publishers with audiences where the platform itself is the product, not a tool sold to businesses"
+    ]
+  },
+  {
+    "value": "E-Commerce",
+    "label": "E-Commerce",
+    "description": "A company whose primary business is selling physical products online through a digital storefront where consumers can browse and purchase directly on the website. The online channel must be the primary mode of commerce, not a secondary channel to brick-and-mortar retail.",
+    "positive_signals": [
+      "Digital storefront with product listings, shopping cart, and checkout functionality as the primary sales channel",
+      "Product catalog of physical goods with pricing, sizing, or shipping information",
+      "Direct-to-consumer (DTC) brand selling physical products primarily through their website",
+      "Presence on e-commerce platforms (Shopify, BigCommerce, WooCommerce) or references to online order fulfillment",
+      "Marketing focused on product imagery, promotions, and online shopping experience"
+    ],
+    "negative_signals": [
+      "Primarily known for extensive brick-and-mortar retail locations (e.g., Walmart, Target, Home Depot) even if they also sell online",
+      "Sells software or digital-only products with no physical goods",
+      "Provides services rather than physical products",
+      "Marketplace or aggregator that connects buyers and sellers but does not sell its own physical inventory"
+    ]
+  },
+  {
+    "value": "Digital Agency",
+    "label": "Digital Agency",
+    "description": "A company \u2014 or holding company whose subsidiaries \u2014 primarily provides web-based or digital services to clients, such as advertising, marketing, public relations, media buying, RevOps, paid advertising, SEO, web development, or cold email, where the core business model is human-delivered services, not software.",
+    "positive_signals": [
+      "'Book a Call,' 'Book a Consultation,' or 'Book a Meeting' CTAs on the website rather than 'Book a Demo'",
+      "Service offerings listed such as SEO, PPC, social media management, web development, content marketing, or RevOps",
+      "Case studies or portfolio showcasing client work and campaign results",
+      "Team page highlighting strategists, account managers, or creative professionals delivering services",
+      "Holding company or parent organization whose portfolio consists primarily of advertising, PR, media, or marketing agencies",
+      "Describes itself as operating across communications, advertising, creative, or media services through subsidiary brands or networks"
+    ],
+    "negative_signals": [
+      "Sells a self-serve software product that customers use independently without agency involvement",
+      "Revenue comes from software subscriptions or seat-based licensing rather than service retainers or project fees",
+      "Marketplace or directory that connects clients with agencies but does not itself deliver services",
+      "Sells physical products online as its primary business"
+    ]
+  },
+  {
+    "value": "Traditional Business",
+    "label": "Traditional Business",
+    "description": "A company whose primary mode of business is established, non-digital-native operations \u2014 including brick-and-mortar retail, financial services, banking, insurance, manufacturing, logistics, healthcare, legal services, or other legacy industries \u2014 even if it also has an online presence or digital channels as secondary offerings.",
+    "positive_signals": [
+      "Extensive network of physical retail locations, branches, offices, or facilities as the primary customer touchpoint",
+      "Financial institution such as a bank, credit union, insurance company, or investment bank with consumer or commercial banking operations",
+      "Large legacy enterprise operating in established industries (finance, energy, healthcare, manufacturing, transportation)",
+      "Regulated industry participant (banking, insurance, securities) with physical branch networks or institutional operations",
+      "Company founded before the internet era whose core business model predates digital commerce",
+      "Known primarily for in-person or physical-world operations (retail stores, factories, hospitals, law offices) rather than digital products",
+      "Globally recognized brand with heritage in physical retail or wholesale, even if it has a strong DTC e-commerce channel"
+    ],
+    "negative_signals": [
+      "Primary business is selling software or a digital platform to customers",
+      "Digital-native company that was born online with no legacy physical operations",
+      "Revenue primarily comes from online sales of physical goods through a digital storefront (e-commerce-first)",
+      "Core offering is human-delivered digital marketing or web services (digital agency model)",
+      "Digital-native platform or marketplace that exists primarily online with no legacy physical operations"
+    ]
+  },
+  {
+    "value": "Other",
+    "label": "Other",
+    "description": "A company that does not clearly fit into SaaS, E-Commerce, Digital Agency, or Traditional Business \u2014 typically internet-native platforms, marketplaces, social networks, content platforms, creator economy businesses, AI research organizations, non-profit or humanitarian organizations, or other digital-native companies whose business model is distinct from traditional software sales, physical product e-commerce, service delivery, or legacy brick-and-mortar operations.",
+    "positive_signals": [
+      "Two-sided marketplace or directory connecting buyers with sellers or service providers without delivering services itself (e.g., Clutch, G2)",
+      "Social media platform, content network, or community-driven platform where users generate the core value (e.g., Reddit, Substack, Patreon)",
+      "Creator economy platform that monetizes through commissions on creator revenue rather than software seat pricing",
+      "AI research organization or consumer technology company whose products are consumed as utilities or APIs rather than traditional SaaS tools (e.g., OpenAI)",
+      "Consumer app or platform (e.g., Duolingo) where the primary experience is content or engagement, not business software tooling",
+      "Revenue model based on advertising, commissions, or freemium consumer access rather than B2B software subscriptions or service retainers",
+      "Non-profit, NGO, or humanitarian organization with physical service delivery (e.g., aid distribution, community programs) that does not operate as a traditional commercial business"
+    ],
+    "negative_signals": [
+      "Sells software via subscription with seat-based or usage-based pricing as a tool for business users (SaaS)",
+      "Sells physical products directly to consumers through an online storefront (E-Commerce)",
+      "Delivers human services like marketing, SEO, or web development to clients (Digital Agency)",
+      "Operates primarily through physical locations, branches, or legacy industry infrastructure (Traditional Business)"
+    ]
+  },
+  {
+    "value": "Internet Business",
+    "label": "Internet Business",
+    "description": "A digital-native company whose primary business exists online as a platform, marketplace, social network, content ecosystem, or consumer technology product \u2014 distinct from traditional SaaS (which sells software tooling via seats/subscriptions) and distinct from e-commerce (which sells physical products). The company's core value proposition is the network, content, community, or digital experience it enables, not a software tool sold to business users.",
+    "positive_signals": [
+      "Two-sided marketplace or aggregator platform connecting buyers with sellers, creators with audiences, or service seekers with providers (e.g., Clutch, G2, Airbnb)",
+      "Social media or community platform where user-generated content drives the core experience (e.g., Reddit)",
+      "Creator economy or publishing platform that takes a commission on transactions between creators and subscribers (e.g., Substack, Patreon)",
+      "Consumer-facing app or platform centered on engagement, learning, or entertainment rather than business software tooling (e.g., Duolingo)",
+      "AI research organization or consumer tech company offering products as consumer utilities, APIs, or freemium tools rather than seat-based enterprise SaaS (e.g., OpenAI)",
+      "Revenue model based on advertising, transaction commissions, or freemium consumer access"
+    ],
+    "negative_signals": [
+      "Sells software as a B2B tool with seat-based or subscription pricing where customers pay for access to software functionality (SaaS)",
+      "Primarily sells physical products through an online storefront (E-Commerce)",
+      "Delivers human services like marketing, consulting, or web development to clients (Digital Agency)",
+      "Operates primarily through physical locations, branches, or legacy industry infrastructure (Traditional Business)",
+      "Company's core value is the software tool itself rather than the network, content, or marketplace it facilitates"
+    ]
+  }
+]

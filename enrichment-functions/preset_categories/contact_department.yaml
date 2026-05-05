@@ -1,0 +1,76 @@
+# contact_department — which functional department the contact belongs to
+#
+# STATUS: scaffold. The structure here is faithful to what real CRM cleanup engagements
+# typically ask for; descriptions/signals are TODO and should be written
+# per the style guide before first use.
+#
+# Inputs the Latitude prompt typically receives for this classification:
+#   { job_title, company_summary, linkedin_about (optional) }
+
+version: 1
+property_id: contact_department
+property_name: Contact Department
+object_type: contact
+default_value: other
+allow_multi_select: false
+
+values:
+  - value: marketing
+    label: Marketing
+    description: TODO — Demand gen, brand, content, growth, ABM, lifecycle, marketing ops.
+    positive_signals: []
+    negative_signals: []
+
+  - value: sales
+    label: Sales
+    description: TODO — AEs, SDRs/BDRs, sales engineers, sales leadership.
+    positive_signals: []
+    negative_signals: []
+
+  - value: revenue_operations
+    label: Revenue Operations
+    description: TODO — RevOps, sales ops, marketing ops with cross-functional remit, GTM systems.
+    positive_signals: []
+    negative_signals: []
+
+  - value: customer_success
+    label: Customer Success
+    description: TODO — CSMs, account managers, customer education, support leadership.
+    positive_signals: []
+    negative_signals: []
+
+  - value: product
+    label: Product
+    description: TODO — PMs, product leadership, product ops, product marketing (when the org puts PMM under product, not marketing).
+    positive_signals: []
+    negative_signals: []
+
+  - value: engineering
+    label: Engineering
+    description: TODO — Software engineers, eng leadership, platform/infra, data engineering.
+    positive_signals: []
+    negative_signals: []
+
+  - value: finance
+    label: Finance
+    description: TODO — Finance, accounting, FP&A, treasury, RevOps when housed in finance.
+    positive_signals: []
+    negative_signals: []
+
+  - value: people_ops
+    label: People Ops / HR
+    description: TODO — HR, talent, recruiting, people-ops, L&D.
+    positive_signals: []
+    negative_signals: []
+
+  - value: executive
+    label: Executive / C-Level
+    description: TODO — CEO, COO, founder, president, GM (when at the top of an org or business unit). Use this when the contact's role spans multiple departments at the leadership level rather than fitting neatly into one functional area.
+    positive_signals: []
+    negative_signals: []
+
+  - value: other
+    label: Other
+    description: TODO — Catch-all. Per the style guide, describe what makes a role NOT fit the above (e.g. industry-specific roles like a doctor in a healthcare company, a lawyer in a legal company).
+    positive_signals: []
+    negative_signals: []

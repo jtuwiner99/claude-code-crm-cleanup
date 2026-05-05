@@ -1,0 +1,66 @@
+# contact_seniority — career-level band of the contact
+#
+# STATUS: scaffold. Seniority is one of the most-customized classifications
+# at the client level — every customer defines "Director" slightly
+# differently, and some need a coarser scale (IC / Manager / Leader) while
+# others need a finer one (separate VP and SVP). This default is
+# intentionally moderately granular; expect overrides.
+#
+# Inputs the Latitude prompt typically receives:
+#   { job_title, company_summary, employee_count, linkedin_about (optional) }
+
+version: 1
+property_id: contact_seniority
+property_name: Contact Seniority
+object_type: contact
+default_value: unclear
+allow_multi_select: false
+
+values:
+  - value: c_level
+    label: C-Level
+    description: TODO — CEO, CMO, CFO, CRO, CTO, etc. The top of the org. Founders count even without a C-title if they're the most-senior person in the company.
+    positive_signals: []
+    negative_signals: []
+
+  - value: vp_or_head
+    label: VP / Head
+    description: TODO — VP, SVP, EVP, Head of <function>, GM of <business unit>. Reports into C-level. Owns budget for the function.
+    positive_signals: []
+    negative_signals: []
+
+  - value: director
+    label: Director
+    description: TODO — Director, Senior Director. Owns a sub-function within a department. May or may not have direct reports who are managers.
+    positive_signals: []
+    negative_signals: []
+
+  - value: manager
+    label: Manager
+    description: TODO — Manager, Senior Manager, Team Lead. Has direct reports who are typically ICs or other managers (rare for the senior-manager case). Day-to-day operational ownership of a small team.
+    positive_signals: []
+    negative_signals: []
+
+  - value: senior_ic
+    label: Senior IC
+    description: TODO — Senior, Staff, Principal, Lead (when not used as "team lead"). Individual contributor with deep expertise; no direct reports but high influence.
+    positive_signals: []
+    negative_signals: []
+
+  - value: ic
+    label: IC
+    description: TODO — Junior or mid-level individual contributor. No direct reports. Title typically lacks Senior/Staff/Principal/Lead prefix.
+    positive_signals: []
+    negative_signals: []
+
+  - value: founder
+    label: Founder
+    description: TODO — A founder of the company, regardless of current title. Use only when the LinkedIn or signal evidence explicitly says "founder" or "co-founder". Founders who are also CEOs map here, not c_level — founder status is the more salient signal for outbound segmentation.
+    positive_signals: []
+    negative_signals: []
+
+  - value: unclear
+    label: Unclear
+    description: TODO — The job title or signals are ambiguous (e.g. "Specialist" without a level prefix, or non-Western title conventions). Use this rather than guessing — downstream qualification can flag for human review.
+    positive_signals: []
+    negative_signals: []

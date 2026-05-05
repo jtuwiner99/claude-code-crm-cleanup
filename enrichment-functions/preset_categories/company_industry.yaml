@@ -1,0 +1,83 @@
+# company_industry — VERTICAL classification (what industry / market)
+#
+# STATUS: scaffold. Industry is highly customer-dependent — most clients
+# care about a specific subset of verticals, not a universal taxonomy. Treat
+# this file as a starting point with the most common B2B verticals
+# clients have asked for; expect to override at the client level.
+#
+# Schema follows preset_categories/README.md. See
+# the classification-schema rules for the rule-writing style guide.
+
+version: 1
+property_id: company_industry
+property_name: Company Industry
+object_type: company
+default_value: other
+allow_multi_select: false  # most customers want one primary industry; switch on if multi-vertical mapping is needed
+
+values:
+  - value: software_saas
+    label: Software / SaaS
+    description: TODO — write per the style guide; software-companies vertical (NOT the same as `company_type=SaaS`; this is industry-as-vertical, e.g. a SaaS-for-healthcare is software_saas-and-healthcare in customers that allow multi-select).
+    positive_signals: []
+    negative_signals: []
+
+  - value: financial_services
+    label: Financial Services
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: healthcare
+    label: Healthcare
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: legal
+    label: Legal
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: manufacturing
+    label: Manufacturing
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: retail_ecommerce
+    label: Retail / E-commerce
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: media_entertainment
+    label: Media / Entertainment
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: education
+    label: Education
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: real_estate
+    label: Real Estate
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: government_nonprofit
+    label: Government / Non-profit
+    description: TODO
+    positive_signals: []
+    negative_signals: []
+
+  - value: other
+    label: Other
+    description: TODO — catch-all for verticals that do not match any of the above. Per the style guide, signals here describe what makes something NOT fit the named categories, not just "doesn't fit elsewhere."
+    positive_signals: []
+    negative_signals: []

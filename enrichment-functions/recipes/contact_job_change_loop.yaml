@@ -1,0 +1,42 @@
+# contact_job_change_loop — recurring subset of default_contact_cleanup
+#
+# Runs on a schedule (typically weekly) against contacts whose URL is
+# ALREADY verified by a prior `default_contact_cleanup` run. Skips URL
+# discovery, identity validation, and classification — just refreshes
+# the current employer and emits a movement signal when the contact has
+# moved.
+#
+# Recipe authors typically wire a CRM-side handler at the call site:
+# - On `status: moved`, write `new_company_*` fields back to the CRM and
+#   tag the contact with a "Moved jobs" event.
+# - On `status: moved && started_role_within_3_months`, additionally
+#   emit a "Recent move — high-value-contact" alert (Slack/email/etc).
+#
+# Inputs (per row):
+#   - linkedin_url               (required — assumed verified by a prior run)
+#   - on_record_company_name     (required)
+#   - on_record_company_domain   (optional disambiguator)
+
+steps:
+  # 1. Refresh profile via Harvest. Use main_only=true — cheaper, only need current employer.
+  - uses: enrich_contact_linkedin_profile
+    inputs:
+      linkedin_url: "{{row.input.linkedin_url}}"
+      harvest_api_key: "{{env.HARVEST_API_KEY}}"
+      main_only: true
+
+  # 2. Job-change detection (deterministic).
+  - uses: detect_job_change
+    inputs:
+      profile_json: "{{enrich_contact_linkedin_profile.profile_json}}"
+      on_record_company_name: "{{row.input.on_record_company_name}}"
+      on_record_company_domain: "{{row.input.on_record_company_domain}}"
+
+# Recipe-level handlers (authored at the call site, NOT in this template):
+#
+#   on detect_job_change.status === 'moved':
+#     - HubSpot/Salesforce: write new_company_name, new_company_domain, new_title
+#     - Tag contact with "Moved jobs" event property
+#
+#   on detect_job_change.status === 'moved' && started_role_within_3_months:
+#     - Emit Slack notification to the account team (high-value-contact trigger)
