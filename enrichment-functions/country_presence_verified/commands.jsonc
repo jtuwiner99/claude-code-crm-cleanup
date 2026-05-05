@@ -1,0 +1,140 @@
+// commands.jsonc — country_presence_verified @ 1.0.0
+//
+// Ported from Clay table "Sellable Entity Detection"
+//   (production Clay workspace, <table-id-redacted>, exported 2026-05-01,
+//    multi-country sellable-entity detection).
+//
+// Pipeline shape:
+//   1. infer_cctld_country     — AI: extract country from ccTLD if present
+//   2. country_to_iso_code     — JS deterministic map: full name → ISO alpha-2
+//   3. resolve_verified_country — JS waterfall: ccTLD code → linkedin_country → null
+//   4. extract_linkedin_locations — JS: pluck location signals from cached PDL payload
+//   5. office_presence_check   — AI: does the company have a real office in verified country?
+//   6. entity_legitimacy_score — AI: 0-100 score + boolean realCountryEntity
+//   7. compose_output          — JS: aggregate everything, default-to-keep on uncertainty
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean                       required
+//   row.input.company_name_clean                 required
+//   row.input.company_summary                    required
+//   row.input.linkedin_url                       required
+//   row.input.linkedin_full_provider_payload     required (PDL payload from linkedin_url_verified)
+//   row.input.linkedin_country                   optional (2-letter ISO)
+//   row.input.ai_model                           optional (default openai/gpt-5-mini)
+
+{
+  "commands": [
+    {
+      "alias": "infer_cctld_country",
+      "description": "Verbatim port of Clay's ccTLD-inference prompt. gpt-5-mini with structured JSON output. Returns the recognized country (full name) when the domain ends in a country-code TLD, or null when the TLD is global (.com / .org / .net / .io / .ai / .co etc.).",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are analyzing a website domain to determine whether it uses a country-code top-level domain (ccTLD).\n\nTask:\n1. Extract the top-level domain from the domain.\n2. Determine whether the domain ends in a country-code top-level domain (ccTLD).\n3. If it is a ccTLD, identify the country associated with that domain.\n\nA ccTLD is typically a two-letter country code at the end of a domain. Examples: company.fr, brand.de, site.ca. Do NOT treat common global domains as country domains: .com, .org, .net, .io, .ai, .co, .app, .tech. Multi-segment domains like company.co.uk → United Kingdom; brand.com.au → Australia.\n\nReference (compact ccTLD mapping):\n.uk→UK, .fr→France, .de→Germany, .ca→Canada, .au→Australia, .jp→Japan, .br→Brazil, .in→India, .es→Spain, .it→Italy, .nl→Netherlands, .se→Sweden, .ch→Switzerland, .sg→Singapore, .mx→Mexico, .ie→Ireland, .be→Belgium, .at→Austria, .dk→Denmark, .fi→Finland, .no→Norway, .pl→Poland, .pt→Portugal, .gr→Greece, .cz→Czech Republic, .sk→Slovakia, .hu→Hungary, .ro→Romania, .bg→Bulgaria, .hr→Croatia, .si→Slovenia, .lt→Lithuania, .lv→Latvia, .ee→Estonia, .lu→Luxembourg, .mt→Malta, .ua→Ukraine, .ru→Russia, .tr→Turkey, .il→Israel, .ae→UAE, .sa→Saudi Arabia, .eg→Egypt, .za→South Africa, .ng→Nigeria, .ke→Kenya, .ma→Morocco, .nz→New Zealand, .hk→Hong Kong, .tw→Taiwan, .kr→South Korea, .my→Malaysia, .id→Indonesia, .ph→Philippines, .th→Thailand, .vn→Vietnam, .pk→Pakistan, .cl→Chile, .ar→Argentina, .co→Colombia, .pe→Peru, .uy→Uruguay, .ec→Ecuador, .ve→Venezuela. (Full reference for less-common codes is part of your training; rely on it for ccTLDs not listed here.) Crown dependencies and territories: .gg=Guernsey, .je=Jersey, .im=Isle of Man, .gi=Gibraltar (UK territories — return UK only when the domain clearly represents a UK business presence).\n\nRules:\n- If the domain is not a country domain, set country to null.\n- Extract the correct country even for multi-segment domains such as .co.uk or .com.au.\n- Do not guess if the TLD is not a recognized country code.\n- Provide your reasoning in 1-2 sentences.\n\nReturn ONLY valid JSON: { extractedTld: <string>, isCcTld: <boolean>, country: <string or null>, reasoning: <string> }",
+        "prompt": "Domain: \"{{row.input.domain_clean}}\"\n\nReturn only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "extractedTld": { "type": "string" },
+            "isCcTld": { "type": "boolean" },
+            "country": { "type": ["string", "null"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["extractedTld", "isCcTld", "country", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "country_to_iso_code",
+      "description": "Deterministic full-name → ISO 3166-1 alpha-2 conversion. Replaces Clay's AI call (which was wasteful for a static lookup).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "run_if_js": "Boolean(row.infer_cctld_country && row.infer_cctld_country.result && row.infer_cctld_country.result.object && row.infer_cctld_country.result.object.country)",
+      "payload": {
+        "code": "const name = (row.infer_cctld_country && row.infer_cctld_country.result && row.infer_cctld_country.result.object && row.infer_cctld_country.result.object.country) || null; if (!name) return { iso_code: null }; const map = { 'united kingdom': 'GB', 'uk': 'GB', 'great britain': 'GB', 'england': 'GB', 'scotland': 'GB', 'wales': 'GB', 'northern ireland': 'GB', 'united states': 'US', 'usa': 'US', 'us': 'US', 'canada': 'CA', 'australia': 'AU', 'germany': 'DE', 'france': 'FR', 'spain': 'ES', 'italy': 'IT', 'netherlands': 'NL', 'sweden': 'SE', 'switzerland': 'CH', 'austria': 'AT', 'belgium': 'BE', 'denmark': 'DK', 'finland': 'FI', 'norway': 'NO', 'ireland': 'IE', 'portugal': 'PT', 'greece': 'GR', 'poland': 'PL', 'czech republic': 'CZ', 'czechia': 'CZ', 'slovakia': 'SK', 'hungary': 'HU', 'romania': 'RO', 'bulgaria': 'BG', 'croatia': 'HR', 'slovenia': 'SI', 'lithuania': 'LT', 'latvia': 'LV', 'estonia': 'EE', 'luxembourg': 'LU', 'malta': 'MT', 'ukraine': 'UA', 'russia': 'RU', 'turkey': 'TR', 'israel': 'IL', 'united arab emirates': 'AE', 'uae': 'AE', 'saudi arabia': 'SA', 'egypt': 'EG', 'south africa': 'ZA', 'nigeria': 'NG', 'kenya': 'KE', 'morocco': 'MA', 'japan': 'JP', 'china': 'CN', 'hong kong': 'HK', 'taiwan': 'TW', 'south korea': 'KR', 'singapore': 'SG', 'malaysia': 'MY', 'indonesia': 'ID', 'philippines': 'PH', 'thailand': 'TH', 'vietnam': 'VN', 'india': 'IN', 'pakistan': 'PK', 'new zealand': 'NZ', 'mexico': 'MX', 'brazil': 'BR', 'argentina': 'AR', 'chile': 'CL', 'colombia': 'CO', 'peru': 'PE', 'uruguay': 'UY', 'ecuador': 'EC', 'venezuela': 'VE', 'iceland': 'IS' }; const key = String(name).toLowerCase().trim(); return { iso_code: map[key] || null, raw_name: name };"
+      }
+    },
+
+    {
+      "alias": "resolve_verified_country",
+      "description": "Waterfall: ccTLD-derived ISO code wins; otherwise fall back to caller-supplied linkedin_country; otherwise null. Emits the verified country code + which signal won.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const cctldCode = row.country_to_iso_code && row.country_to_iso_code.result && row.country_to_iso_code.result.data && row.country_to_iso_code.result.data.iso_code; const cctldRan = !!(row.infer_cctld_country && row.infer_cctld_country.result && row.infer_cctld_country.result.object && row.infer_cctld_country.result.object.isCcTld === true); const linkedinCountry = (row.input && row.input.linkedin_country) || null; let code = null; let source = 'none'; if (cctldRan && cctldCode) { code = cctldCode; source = 'ccTLD'; } else if (linkedinCountry && typeof linkedinCountry === 'string' && linkedinCountry.length === 2) { code = linkedinCountry.toUpperCase(); source = 'linkedin'; } return { verified_country_code: code, verified_country_source: source };"
+      }
+    },
+
+    {
+      "alias": "extract_linkedin_locations",
+      "description": "Pull location signals from the cached PDL payload supplied by upstream linkedin_url_verified. Best-available given PDL's standard enrich_company response shape; if the payload doesn't include a locations array, return whatever location field IS present.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const p = (row.input && row.input.linkedin_full_provider_payload) || {}; const locations = []; if (Array.isArray(p.locations)) { for (const l of p.locations) { locations.push(l); } } else if (p.location && typeof p.location === 'object') { locations.push(p.location); } else if (typeof p.headquarters === 'object' && p.headquarters) { locations.push(p.headquarters); } const summary = locations.length ? JSON.stringify(locations).slice(0, 4000) : 'No structured locations available in upstream payload.'; return { locations: locations, summary: summary };"
+      }
+    },
+
+    {
+      "alias": "office_presence_check",
+      "description": "Verbatim port of Clay's 'Office Presence' prompt. AI judges whether the company has a real operational office in the verified country, using LinkedIn locations + (best-available) employee count signal + AI research. Default-to-keep semantics enforced at compose_output.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.resolve_verified_country && row.resolve_verified_country.result && row.resolve_verified_country.result.data && row.resolve_verified_country.result.data.verified_country_code)",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a research assistant responsible for determining whether a company actually operates an office in a specified country, rather than simply using a country-level domain for localization.\n\nINPUTS\nYou will receive: company_name, domain, country_to_evaluate, linkedin_company_locations, linkedin_company_employees_in_location.\n\nOBJECTIVE\nDetermine whether the company likely has a real office or operational presence in the specified country.\n\nEVALUATION PROCESS\n1. Check LinkedIn Company Locations — if LinkedIn explicitly lists an office in the specified country, this is strong evidence.\n2. Look for Office Presence Signals: corporate office address, careers pages with jobs in country, Google Maps listings, press releases mentioning offices, regional headquarters pages, multiple independent references, employees on LinkedIn in that location.\n3. Evaluate the Domain — if the domain uses a country-level TLD, determine whether this is likely a localized website for marketing/language OR evidence of a true operational presence. Do NOT assume country domain = office there.\n4. Distinguish Localization vs Physical Presence:\n   - Localization only: country-specific marketing pages, translated content, country domains without office listings\n   - Physical presence: verified office address, LinkedIn office location, hiring activity, press references\n5. Apply Conservative Logic — if there is no clear evidence of office or operational presence, return false.\n\nDECISION RULES\nReturn TRUE if: LinkedIn lists office in country OR verified office address exists OR multiple independent sources indicate regional office/headquarters.\nReturn FALSE if: only country-level domain exists OR only localized pages exist OR no credible evidence of physical office/operational presence.\n\nReturn ONLY valid JSON: { hasOfficeInCountry: <boolean>, confidence: \"high\"|\"medium\"|\"low\", evidence: [<short string>, ...], reasoning: <string> }",
+        "prompt": "company_name: \"{{row.input.company_name_clean}}\"\ndomain: \"{{row.input.domain_clean}}\"\ncountry_to_evaluate: \"{{resolve_verified_country.result.data.verified_country_code}}\"\nlinkedin_company_locations: \"{{extract_linkedin_locations.result.data.summary}}\"\nlinkedin_company_employees_in_location: \"unknown — Deepline currently has no by-country LinkedIn headcount tool; lean on locations + LinkedIn description + your own web research\"\n\nReturn only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "hasOfficeInCountry": { "type": "boolean" },
+            "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+            "evidence": { "type": "array", "items": { "type": "string" } },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["hasOfficeInCountry", "confidence", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "entity_legitimacy_score",
+      "description": "Verbatim port of Clay's 'Entity Legitimacy JSON' prompt. AI scoring 0-100 plus boolean realCountryEntity. Looks at the full signal set (LinkedIn locations, employee evidence, summary, office-presence reasoning) and decides whether this is a real sellable in-country entity vs. marketing-only localization.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.resolve_verified_country && row.resolve_verified_country.result && row.resolve_verified_country.result.data && row.resolve_verified_country.result.data.verified_country_code)",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a corporate entity verification and data quality analysis assistant. Your goal is to determine whether a country-level domain represents a legitimate local business entity that operates in that country, or whether it is simply a localized marketing domain for a larger parent company.\n\nA legitimate entity = a real operating business presence that a salesperson could reasonably sell to (country office, regional subsidiary, or local division).\nA non-legitimate entity = the domain is likely just a marketing localization, redirect, or landing page for the global parent without a real independent operating presence.\n\nINPUTS: country_level_domain, company_name, domain_inferred_country, summary_of_what_company_does, linkedin_office_locations, employees_found_on_linkedin_in_country, ai_research_summary_of_country_entity, offices_summary_in_country.\n\nEVALUATION CRITERIA\nStrong Positive Indicators:\n- LinkedIn lists an office location in that country\n- Multiple employees on LinkedIn located in that country\n- Evidence of a legal entity or local subsidiary (GmbH, Ltd, SAS, BV, etc.)\n- The company describes operations / offices / hiring / services in that country\n- Country-specific leadership, teams, or hiring activity\n- Independent presence that suggests the entity could purchase software/services\nModerate Indicators:\n- Country-specific contact details or addresses\n- Separate country-level branding or operations pages\n- Evidence of regional teams or localized support functions\nWeak or Negative Indicators:\n- The domain is just a translated or localized version of the global site\n- No employees in that country\n- No LinkedIn office location listed\n- The domain redirects or mirrors the main global website\n- No evidence of local operations beyond marketing pages\n\nIMPORTANT: Even if the company has a global parent (e.g. Unilever → Unilever Germany), the entity should still be considered legitimate if it appears to be a real operating division that could realistically purchase products or services.\n\nSCORING GUIDELINES\n90-100 → very strong evidence of real country entity\n70-89 → likely real entity with good supporting signals\n40-69 → unclear / mixed signals\n0-39 → likely just a localized marketing domain\n\nReturn ONLY valid JSON: { realCountryEntity: <boolean>, likelihoodScore: <integer 0-100>, likelyParentCompany: <string or null>, explanation: <string> }",
+        "prompt": "country_level_domain: \"{{row.input.domain_clean}}\"\ncompany_name: \"{{row.input.company_name_clean}}\"\ndomain_inferred_country: \"{{resolve_verified_country.result.data.verified_country_code}}\"\nsummary_of_what_company_does: \"{{row.input.company_summary}}\"\nlinkedin_office_locations: \"{{extract_linkedin_locations.result.data.summary}}\"\nemployees_found_on_linkedin_in_country: \"unknown — Deepline currently has no by-country LinkedIn headcount tool\"\nai_research_summary_of_country_entity: \"see your own evaluation\"\noffices_summary_in_country: \"{{office_presence_check.result.object.reasoning}}\"\n\nReturn only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "realCountryEntity": { "type": "boolean" },
+            "likelihoodScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "likelyParentCompany": { "type": ["string", "null"] },
+            "explanation": { "type": "string" }
+          },
+          "required": ["realCountryEntity", "likelihoodScore", "explanation"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate signals into the function's declared outputs. Default-to-keep semantics: AI failures or no-verified-country case → is_sellable_entity_in_verified_country defaults to true (don't drop real customers because of an AI hiccup or a missing country signal).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const cctld = row.infer_cctld_country && row.infer_cctld_country.result && row.infer_cctld_country.result.object; const cr = row.resolve_verified_country && row.resolve_verified_country.result && row.resolve_verified_country.result.data; const op = row.office_presence_check && row.office_presence_check.result && row.office_presence_check.result.object; const el = row.entity_legitimacy_score && row.entity_legitimacy_score.result && row.entity_legitimacy_score.result.object; const verified_country_code = cr ? cr.verified_country_code : null; const verified_country_source = cr ? cr.verified_country_source : 'none'; const has_office_in_country = op ? op.hasOfficeInCountry : null; const realEntity = el ? el.realCountryEntity : null; const score = el ? el.likelihoodScore : null; let is_sellable = true; if (verified_country_code) { if (realEntity === false) is_sellable = false; if (has_office_in_country === false && realEntity !== true) is_sellable = false; } const reasoningParts = []; if (cctld && cctld.reasoning) reasoningParts.push('ccTLD: ' + cctld.reasoning); if (op && op.reasoning) reasoningParts.push('Office: ' + op.reasoning); if (el && el.explanation) reasoningParts.push('Entity: ' + el.explanation); return { verified_country_code: verified_country_code, verified_country_source: verified_country_source, is_sellable_entity_in_verified_country: is_sellable, entity_legitimacy_score: score, has_office_in_country: has_office_in_country, has_employees_in_country: null, likely_parent_company: el ? (el.likelyParentCompany || null) : null, ai_reasoning: reasoningParts.length ? reasoningParts.join(' || ') : null, verification_signals: { cctld: { ran: !!cctld, isCcTld: cctld ? cctld.isCcTld : null, country: cctld ? cctld.country : null, reasoning: cctld ? cctld.reasoning : null }, country_resolution: { source: verified_country_source, code: verified_country_code }, office_presence: { ran: !!op, verdict: op ? op.hasOfficeInCountry : null, confidence: op ? op.confidence : null, evidence: op ? op.evidence : null, reasoning: op ? op.reasoning : null }, entity_legitimacy: { ran: !!el, score: score, realCountryEntity: realEntity, likelyParentCompany: el ? el.likelyParentCompany : null, explanation: el ? el.explanation : null } } };"
+      }
+    }
+  ]
+}

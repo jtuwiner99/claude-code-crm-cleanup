@@ -1,0 +1,170 @@
+name: country_presence_verified
+version: 1.0.0
+status: ported_from_clay
+description: >
+  Determine whether a company has a real, sellable presence in its verified
+  country — distinguishing a real legal entity / branch / regional office
+  from a marketing-only country-level domain (e.g. underarmour.co.uk owned
+  by the US parent without a real UK operation). Two-phase logic:
+  (1) resolve the verified country — waterfall from ccTLD inference (.co.uk
+  → GB) to LinkedIn country fallback when the domain is global (.com / .io
+  / .ai / .co); (2) score whether the company has a sellable in-country
+  entity using two AI prompts (office presence + entity legitimacy) over
+  the LinkedIn locations + size + description signals already captured by
+  upstream `linkedin_url_verified`. Emits `is_sellable_entity_in_verified_country`
+  as the aggregate gate the calling pipeline uses to drop wrong-geography
+  records before classification + routing.
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name (output of `normalize_domain_and_name`).
+  - name: company_summary
+    type: string
+    required: true
+    description: >
+      Dense company summary (output of `company_summary_from_website`). Used
+      as grounding by the entity-legitimacy AI step. Required because the
+      AI scoring prompt uses it to distinguish a real division from a
+      marketing-only localization.
+  - name: linkedin_url
+    type: string
+    required: true
+    description: Verified LinkedIn URL (output of `linkedin_url_verified`).
+  - name: linkedin_full_provider_payload
+    type: object
+    required: true
+    description: >
+      Cached PDL payload from `linkedin_url_verified.full_provider_payload`.
+      The function reads `data.location` / locations-list signals from this
+      payload to feed the AI office-presence prompt. Required because
+      re-fetching would burn a redundant credit.
+  - name: linkedin_country
+    type: string
+    required: false
+    description: >
+      2-letter ISO country code from upstream LinkedIn enrichment (when
+      available — PDL emits `data.location.country` on some calls). Used as
+      the fallback verified-country source when the domain has no ccTLD.
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for ALL AI steps in this function — ccTLD inference, office
+      presence, entity legitimacy. Defaults to gpt-5-mini per default policy (set 2026-05-01). Higher-stakes customers may upgrade.
+
+outputs:
+  - name: verified_country_code
+    type: string
+    nullable: true
+    description: >
+      2-letter ISO country code. Source: ccTLD inference if domain ends in
+      a recognized country code; otherwise `linkedin_country` fallback;
+      null if neither is available.
+  - name: verified_country_source
+    type: string
+    description: One of `ccTLD` | `linkedin` | `none`. Tells the caller which signal won the waterfall.
+  - name: is_sellable_entity_in_verified_country
+    type: boolean
+    description: >
+      The aggregate gate. True iff the entity-legitimacy AI step returned
+      `realCountryEntity: true` AND the office-presence step did NOT
+      explicitly return `hasOfficeInCountry: false`. Default-to-keep on AI
+      uncertainty — false negatives (incorrectly dropping a real customer)
+      are more expensive than false positives (keeping a marketing-only
+      domain through to classification). Caller code that wants stricter
+      behavior should explicitly check `entity_legitimacy_score >= 70`.
+  - name: entity_legitimacy_score
+    type: integer
+    nullable: true
+    description: 0-100 score from the entity-legitimacy AI step. 90+ = strong evidence; 70-89 = likely real; 40-69 = mixed; 0-39 = likely marketing-only.
+  - name: has_office_in_country
+    type: boolean
+    nullable: true
+    description: AI office-presence verdict. Null if the step didn't run (e.g. no verified country to evaluate).
+  - name: has_employees_in_country
+    type: boolean
+    nullable: true
+    description: >
+      Best-effort signal. v1 limitation — Deepline currently has no
+      MixRank-equivalent "employees by country" tool, so this defaults to
+      `null` and the AI prompts work without a precise count. Marked for
+      future tightening when Apify HarvestAPI / Crustdata / PDL gain a
+      by-country headcount operation. See the `country_employee_count`
+      planned function in the top-level enrichment-functions/README.
+  - name: likely_parent_company
+    type: string
+    nullable: true
+    description: When the entity is flagged as marketing-only, the AI's best guess at the real parent (e.g. underarmour.co.uk → "Under Armour, Inc. (US parent)"). Null when the entity itself is the parent.
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: Concatenated reasoning from the AI steps. For human review and Latitude trace lookup.
+  - name: verification_signals
+    type: object
+    description: >
+      Full audit trail: { cctld: {ran, isCcTld, country, reasoning},
+      country_resolution: {source, code}, office_presence: {ran, verdict,
+      confidence, evidence, reasoning}, entity_legitimacy: {ran, score,
+      realCountryEntity, likelyParentCompany, explanation} }.
+
+providers:
+  - name: deeplineagent
+    role: All three AI steps (ccTLD inference, office presence, entity legitimacy).
+
+ai_calls:
+  - tier: cctld_inference
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 2000  # large prompt with full ccTLD reference table
+    runs_when: always
+  - tier: office_presence
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 2500
+    runs_when: verified_country_code is not null
+  - tier: entity_legitimacy
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 3000
+    runs_when: verified_country_code is not null
+estimated_cost_usd: 0.012  # three AI calls per row
+
+invariants:
+  - Customer-specific HubSpot territory matching is NOT in this function. Callers do that downstream by comparing `verified_country_code` against the CRM source-of-truth field.
+  - If `verified_country_code` is null (no ccTLD AND no linkedin_country), the AI scoring steps are skipped — `is_sellable_entity_in_verified_country` defaults to true (cannot disprove what cannot be evaluated).
+  - AI step failure → outputs default to null, NOT false. `is_sellable_entity_in_verified_country` falls back to true. We err generous (don't drop real customers because of an AI hiccup).
+  - The function makes no claims about the precise number of in-country employees — only directional signals from LinkedIn locations + AI judgment. v1 limitation; track in the function README.
+
+clay_origin:
+  source: Clay table — multi-country sellable-entity detection
+  exported_at: 2026-05-01
+  port_notes: >
+    Source Clay table was 80 columns spanning ten phases. Phases 2-4
+    (company enrichment, summary, normalization) are duplicative with
+    `linkedin_url_verified` + `company_summary_from_website` +
+    `normalize_domain_and_name` — NOT re-ported. Phase 8 (parking page) is
+    duplicative with `verify_domain_alive` — NOT re-ported. Phases 9-10
+    (CRM owner → territory mapping → country-match → final High/Low fit
+    scoring) are project-specific business rules — recipe-level, NOT
+    function-level.
+    Phases 1, 5, 6, 7 ARE the new logic ported here:
+    - Phase 1 → cctld_inference (verbatim Clay prompt with full country mapping table)
+    - Phase 5 → DEFERRED (no Deepline by-country headcount tool; flagged as `country_employee_count` future-extension, parallel to `company_core_from_linkedin`)
+    - Phase 6 → office_presence_check (verbatim Clay prompt)
+    - Phase 7 → entity_legitimacy_score (verbatim Clay prompt + JSON schema)
+    Clay's Country Code conversion (full name → ISO alpha-2) was an AI call;
+    replaced with a deterministic JS map — same correctness, no AI cost.
+    All AI models bumped from the Clay-source mix (gpt-4o-mini and
+    gpt-5-mini) to a consistent gpt-5-mini default.
+
+related:
+  - upstream: normalize_domain_and_name → verify_domain_alive → company_summary_from_website → linkedin_url_verified
+  - downstream: classify_via_latitude
+  - planned_extension: country_employee_count (parallel to company_core_from_linkedin — adds precise by-country LinkedIn headcount once a Deepline tool gains that capability)
