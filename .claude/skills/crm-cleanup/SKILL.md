@@ -23,21 +23,68 @@ User does about 60 seconds of typing across phases 1+2; phase 3 is the spectacle
 Run these checks in order. Surface only what's broken — don't ceremoniously announce everything that's working.
 
 ```bash
-# 1. .env present?
+# 1. .env present? Required keys: ANTHROPIC + DEEPLINE.
 test -f .env && grep -q "^DEEPLINE_API_KEY=" .env && grep -q "^ANTHROPIC_API_KEY=" .env
+
+# 1a. Harvest key set? Optional but RECOMMENDED — enables exact LinkedIn employee counts.
+grep -qE "^HARVEST_API_KEY=[^<\s].+" .env  # passes only on a real value (not "<your-harvest-key>" placeholder)
 
 # 2. Python deps installed?
 python3 -c "import yaml, requests" 2>&1
 
 # 3. Deepline CLI on PATH?
 which deepline
+
+# 4. Node.js installed? The Deepline CLI shells out to a local Node-based playground backend
+#    to execute playbooks — without Node, every run fails with "Missing Node.js executable".
+which node && node --version
+
+# 5. Node TLS reachability? Fresh Node installs (especially Node 25 via Homebrew) sometimes
+#    ship without default trust roots, so npm subprocesses inside the Deepline CLI fail with
+#    UNABLE_TO_GET_ISSUER_CERT_LOCALLY when fetching the agent skills package.
+node -e "require('https').get('https://registry.npmjs.org/', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))" 2>/dev/null
+
+# 6. Deepline credit balance — small but non-zero check. The first run plus retry on
+#    50 sample rows costs ~$0.05–0.10 of credits; a fresh free-tier balance covers it.
+deepline billing balance 2>&1 | grep -oE '[0-9]+(\.[0-9]+)?' | head -1
 ```
 
 Branch on results:
 
-- **No `.env`**: `cp .env.example .env`, then ask the user to fill `DEEPLINE_API_KEY` and `ANTHROPIC_API_KEY`. (Deepline runtime needs both; deeplineagent calls Anthropic Haiku 4.5 via Deepline's BYOK model.) Wait for confirmation, then re-run the check.
+- **No `.env`**: `cp .env.example .env`, then ask the user to fill `DEEPLINE_API_KEY` and `ANTHROPIC_API_KEY` (and ideally `HARVEST_API_KEY` — see next branch). Wait for confirmation, then re-run the check.
 - **Missing deps**: `pip install -r requirements.txt`. Confirm success before proceeding.
 - **No `deepline` CLI**: `curl -s 'https://code.deepline.com/api/v2/cli/install' | bash`. Verify `deepline --version` works after.
+- **No Node.js (`which node` empty / version missing)**: explain plainly:
+
+  > Say (verbatim or close to it): *"Heads up — you don't have Node.js installed. The Deepline CLI uses a local Node-based 'playground backend' to execute playbooks; without Node, every run fails immediately with 'Missing Node.js executable'. Easiest fix on macOS is `brew install node` (~60s, ~80MB). On Linux: `sudo apt install nodejs` or via your package manager. On Windows: nodejs.org installer. Want me to run `brew install node` now?"*
+
+  Branch:
+  - **User says yes**: run `brew install node` (or the platform equivalent). Note: this is a system-wide install requiring user authorization in some Claude Code setups — if denied, fall back to asking the user to run it themselves with `! brew install node` in the prompt.
+  - **User wants to install themselves**: wait for confirmation, re-run check 4.
+
+- **Node SSL fails** (check 5 returns non-zero, OR a run later errors with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`): explain and fix:
+
+  > Say (verbatim or close to it): *"Your Node install can't verify TLS certificates against the public CA bundle — happens often on fresh Homebrew Node 25 installs. The Deepline CLI fails when it tries to npm-fetch its agent skills package. Quick fix: point Node at the system CA bundle via `NODE_EXTRA_CA_CERTS` in your `.env`. Should I add it?"*
+
+  Branch:
+  - **User says yes**: detect the CA bundle path (`brew --prefix ca-certificates 2>/dev/null` → typical `<prefix>/cert.pem`; on some systems `/etc/ssl/cert.pem` works). Append `NODE_EXTRA_CA_CERTS=<path>` to `.env`. `tools/enrich.py` loads `.env` via dotenv, so this propagates to the deepline CLI's npm subprocess automatically. Verify check 5 passes after.
+  - **User declines**: continue, but flag that the first run will likely fail with an SSL error and we'll loop back here.
+
+- **Deepline credit balance below ~1 credit** (check 6): warn:
+
+  > Say (verbatim or close to it): *"Your Deepline credit balance is very low ({balance}). A 50-row sample run with retries needs ~5–10 credits ($0.50–$1.00). Top up at https://deepline.ai/billing before running, otherwise rows will fail with 'Insufficient credits'."*
+
+  Don't block — let the user proceed if they want. If a subsequent run fails with `Insufficient credits`, loop back here with a stronger nudge.
+- **No `HARVEST_API_KEY` (optional but strongly recommended — proactively nudge once)**: if the value is missing or still the `<your-harvest-key>` placeholder, ask the user before moving on:
+
+  > Say (verbatim or close to it): *"Quick optional add — `HARVEST_API_KEY` isn't set. With it, `numberofemployees` does a **live LinkedIn scrape via the Harvest API** and returns the exact integer (e.g. 1,113). Without it, the playbook falls back to whatever the AI agent reads from LinkedIn search snippets — usually only a public band like '1,001-5,000', floored to 1001. The playbook works either way; Harvest just sharpens accuracy meaningfully. Get a key at https://harvest-api.com/admin/api-keys (paid, ~$0.005/row). Want to add it now or skip and use the band fallback?"*
+
+  Branch on the answer:
+  - **Add now**: tell the user to paste the key into `.env` after the `HARVEST_API_KEY=` line (suggest `! sed -i '' 's/^HARVEST_API_KEY=.*/HARVEST_API_KEY=hak_their_key/' .env` on macOS so the value never lands in your tool output). Wait for confirmation, re-run the 1a check.
+  - **Skip**: continue. Note in the Phase 3 run summary that `numberofemployees` will be band lower-bounds, not Harvest-exact integers, and surface this in the `employee_source` column on every row.
+
+  Mention this nudge ONCE per session. The compile step (`tools/enrich.py`) substitutes `<HARVEST_API_KEY>` in `tmp/playbook.jsonc` from `.env` and surfaces unresolved placeholders as warnings — without the key, Harvest calls 401 cleanly and the verdict step falls back to the agent's tier-2 result.
+
 - **HubSpot path (recommended for real-data use)**: if `tmp/hubspot-properties.csv` does NOT already exist AND the user hasn't already pointed at a CSV path, **proactively suggest** the install:
 
   > Say (verbatim or close to it): *"To run this on your real CRM data, install Sculpted's HubSpot app — one OAuth, takes ~30 seconds, no API keys to manage. Or you can use the bundled `tmp/sample-accounts.csv` (50 well-known companies) for a quick demo. Which do you want?"*
@@ -216,7 +263,8 @@ Print a quick summary:
 - Total rows enriched
 - Counts per enum value (e.g. `industry: B2B SaaS=23, FinTech=4, Services=12, ...`)
 - Anything notable (acquired counts, large-bucket counts, dead-domain count)
-- Path to enriched CSV
+- **`employee_source` breakdown** when Harvest is in the loop — e.g. `harvest_linkedin_exact: 38, agent_linkedin_band_or_exact: 9, none: 3`. This tells the user how many rows got the live-scraped exact integer vs the band fallback. If `HARVEST_API_KEY` was unset, expect every row to be `agent_linkedin_band_or_exact` or `none` — flag this and remind the user the Harvest top-up is the smallest accuracy lever they have.
+- Path to enriched CSV (and the auto-emitted flat companion at `tmp/enriched-flat.csv`)
 - Deepline session URL (preserve from runner output)
 
 ## Phase 4: Iteration against golden dataset (optional)
@@ -271,5 +319,7 @@ This is the iteration loop the demo lands on. Keep it tight — don't lecture ab
 
 ## Pro upgrade paths (mention only if the user asks)
 
+- **For exact LinkedIn employee counts**: already wired in. `tmp/playbook.jsonc` includes a `harvest_call` step that hits the Harvest API directly when `HARVEST_API_KEY` is set in `.env`. See the Phase 1 Harvest nudge above.
+- **For deterministic LinkedIn-URL discovery (instead of having the AI agent surface it)**: layer in `enrichment-functions/linkedin_url_verified/` ahead of Harvest — uses Lusha tier-1 (cheap domain → URL + firmographics with AI fuzzy-match verification) and falls back to deeplineagent web research. Closes the gap on the long tail where the agent fails to find a verifiable LinkedIn URL.
 - **For prompt iteration to ~100% accuracy**: route through Latitude (see `enrichment-functions/*_via_latitude/` — pro-path Deepline functions with prompt versioning + dataset-driven regression). The full course covers the swap pattern.
 - **For production-scale runs at hundreds-of-thousands of rows**: layer in provider waterfalls (Lusha → PDL → Crustdata → Apollo), scoring models calibrated to your ICP, async stakeholder collaboration via Sheets for property scoping, and a manual QA review loop. That's the system Sculpted runs for B2B SaaS revenue teams who want this at production scale — [hire Sculpted](https://sculpted.agency) if you want a hand wiring it up.

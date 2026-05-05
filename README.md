@@ -57,6 +57,10 @@ pip install -r requirements.txt
 cp .env.example .env
 # Fill DEEPLINE_API_KEY (free tier covers the smoke test) at https://deepline.ai
 # Fill ANTHROPIC_API_KEY at https://console.anthropic.com (deeplineagent uses BYOK)
+# (Optional but recommended) Fill HARVEST_API_KEY at https://harvest-api.com/admin/api-keys
+#   — enables a live LinkedIn scrape for exact integer employee counts; without
+#     it, `numberofemployees` falls back to the band lower-bound the AI agent
+#     reads from public search snippets (e.g. "501" floored from "501-1,000").
 ```
 
 Install the Deepline CLI if you don't have it:

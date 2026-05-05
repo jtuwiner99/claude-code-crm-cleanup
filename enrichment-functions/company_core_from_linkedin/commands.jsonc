@@ -1,32 +1,70 @@
 // commands.jsonc — company_core_from_linkedin @ 1.0.0
 //
-// SCAFFOLD. Implementation pending Clay export of the equivalent
-// "LinkedIn → Firmographics" extraction.
+// Single Harvest call per row via generic_http_request, mirroring the
+// security and structural pattern of enrich_contact_linkedin_profile —
+// caller-supplied API key baked into the compiled playbook headers.
 //
-// High-level flow:
+// Pipeline:
+//   1. build_request   — JS: assemble Harvest URL with the LinkedIn company
+//                        URL as a query param. Throws if linkedin_url or
+//                        harvest_api_key are missing.
+//   2. harvest_call    — HTTP: GET https://api.harvest-api.com/linkedin/company
+//                        with X-API-Key auth.
+//   3. compose_output  — JS: normalize Harvest's company envelope into the
+//                        function's declared output schema. Hoists
+//                        employee_count (the canonical integer), structured
+//                        headquarters (street/city/state/postal/country,
+//                        with ISO-2 country code from .headquarter.parsed),
+//                        founded_year, industry, website, description,
+//                        specialities. Bands are derived deterministically
+//                        from employee_count for callers that want them.
 //
-//   1. payload_resolve
-//        run_javascript: if {{input.harvest_payload_cached}} is non-empty,
-//          return it directly. Otherwise emit a sentinel that triggers (2).
-//
-//   2. harvest_fetch
-//        run_if_js: payload_resolve returned the sentinel
-//        tool: <harvest_api_fetch_company_by_url>
-//        payload: { linkedin_url: "{{input.linkedin_url}}" }
-//
-//   3. extract_fields
-//        run_javascript: pluck employee_count, headquarters {street, city,
-//          state, postal_code, country}, industry, founded_year, website,
-//          description, specialties from whichever upstream payload populated.
-//
-//   4. derive_size_band
-//        run_javascript: deterministic banding from employee_count.
-//
-//   5. compose_output
-//        run_javascript: emit the declared outputs.
+// Input shape (when called as a sub-workflow):
+//   row.input.linkedin_url             required (e.g. "https://linkedin.com/company/stripe")
+//   row.input.harvest_api_key          required
+//   row.input.harvest_payload_cached   optional — if non-empty, skips the
+//                                       Harvest call and reuses the cached
+//                                       response. Saves one credit per row.
+//   row.input.timeout_ms               optional (default 30000)
 
 {
   "commands": [
-    // TODO(clay-port): see step-by-step flow above; populate from Clay export.
+    {
+      "alias": "build_request",
+      "description": "Compose Harvest URL targeting the LinkedIn company endpoint. Returns { url, timeout_ms, has_cache }. Skips URL build if a cached payload is supplied. Throws if required inputs are missing.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const cached = i.harvest_payload_cached; const has_cache = !!(cached && typeof cached === 'object' && Object.keys(cached).length > 0); if (has_cache) { return { url: null, timeout_ms: i.timeout_ms || 30000, has_cache: true }; } if (!i.linkedin_url) throw new Error('linkedin_url missing'); if (!i.harvest_api_key) throw new Error('harvest_api_key missing'); const url = 'https://api.harvest-api.com/linkedin/company?url=' + encodeURIComponent(i.linkedin_url); return { url: url, timeout_ms: i.timeout_ms || 30000, has_cache: false };"
+      }
+    },
+
+    {
+      "alias": "harvest_call",
+      "description": "GET Harvest /linkedin/company. Auth via X-API-Key header (caller-supplied — baked into compiled playbook). Skipped when a cached payload is supplied upstream.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.url && !row.build_request.result.data.has_cache)",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request.result.data.url}}",
+        "headers": {
+          "X-API-Key": "{{row.input.harvest_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "timeout_ms": "{{build_request.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const body = r.body || r.data || r; if (!body) return { ok: false, error: 'no body', element: null }; if (body.error) return { ok: false, error: body.error, element: null }; const element = body.element || body; if (!element || typeof element !== 'object') return { ok: false, error: 'no element in response', element: null }; if (!element.universalName && !element.name) return { ok: false, error: 'no universalName or name in response', element: element }; return { ok: true, element: element }; }"
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Normalize Harvest's company envelope into the function's declared output schema. employee_count is the canonical integer; headquarters is a structured object with the ISO-2 country code from Harvest's pre-parsed location data. Returns null/empty fields cleanly when Harvest didn't provide them.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const cached = i.harvest_payload_cached; const has_cache = !!(cached && typeof cached === 'object' && Object.keys(cached).length > 0); const hc = row.harvest_call && row.harvest_call.result && row.harvest_call.result.data; const usedCache = has_cache; const element = usedCache ? cached : (hc && hc.ok ? hc.element : null); const ok = !!element; const verifSignals = { harvest: { ran: !usedCache && !!hc, ok: ok, used_cache: usedCache, error: ok ? null : ((hc && hc.error) || (usedCache ? null : 'harvest_call did not run')) } }; if (!ok) { return { employee_count: null, employee_count_range: null, company_size_band: null, headquarters: { street: null, city: null, state: null, postal_code: null, country: null }, industry: null, founded_year: null, website: null, description: null, specialties: [], linkedin_payload: null, verification_signals: verifSignals }; } const e = element; const ecRange = e.employeeCountRange || {}; const start = (typeof ecRange.start === 'number') ? ecRange.start : null; const end = (typeof ecRange.end === 'number') ? ecRange.end : null; const employee_count_range = (start !== null || end !== null) ? { start: start, end: end } : null; const bandFromRange = function(s, x) { if (s === null && x === null) return null; if (s === 1 && x === 10) return '1-10'; if (s === 11 && x === 50) return '11-50'; if (s === 51 && x === 200) return '51-200'; if (s === 201 && x === 500) return '201-500'; if (s === 501 && x === 1000) return '501-1000'; if (s === 1001 && x === 5000) return '1001-5000'; if (s === 5001 && x === 10000) return '5001-10000'; if (s === 10001 && x === null) return '10001+'; if (s !== null && x === null) return s + '+'; if (s !== null && x !== null) return s + '-' + x; return null; }; const company_size_band = bandFromRange(start, end); const hq = e.headquarter || {}; const parsed = hq.parsed || {}; const headquarters = { street: hq.line1 || null, line2: hq.line2 || null, city: parsed.city || hq.city || null, state: parsed.state || hq.geographicArea || null, postal_code: hq.postalCode || null, country: parsed.countryCode || null, country_full: parsed.countryFull || hq.country || null }; const founded = e.foundedOn || {}; const founded_year = (typeof founded.year === 'number') ? founded.year : null; const industries = Array.isArray(e.industries) ? e.industries : []; const specialities = Array.isArray(e.specialities) ? e.specialities : []; return { employee_count: (typeof e.employeeCount === 'number') ? e.employeeCount : null, employee_count_range: employee_count_range, company_size_band: company_size_band, headquarters: headquarters, industry: industries[0] || null, industries: industries, founded_year: founded_year, website: e.website || null, linkedin_url: e.linkedinUrl || i.linkedin_url || null, name: e.name || null, description: e.description ? String(e.description).slice(0, 2000) : null, specialties: specialities, linkedin_payload: e, verification_signals: verifSignals };"
+      }
+    }
   ]
 }

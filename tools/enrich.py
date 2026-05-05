@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -35,6 +36,37 @@ except ImportError:
     pass
 
 from runner.deepline_runner import run_enrichment
+
+# Repo-wide convention for secret placeholders: <UPPER_SNAKE_KEY>.
+# When the playbook is compiled (right before invoking deepline), every
+# occurrence of <FOO> is substituted with os.environ["FOO"] when present.
+# Unmatched placeholders are passed through untouched (the Deepline CLI will
+# fail loudly on them, which is the right behavior — the operator forgot to
+# set a key in .env).
+_PLACEHOLDER_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
+
+
+def compile_playbook(src_path: pathlib.Path, dst_path: pathlib.Path) -> dict:
+    """Substitute env-var placeholders in the playbook and write the compiled
+    file to disk. Returns a dict with substitution audit info."""
+    raw = src_path.read_text()
+    substituted: dict[str, str] = {}
+    unresolved: list[str] = []
+
+    def _replace(m: re.Match) -> str:
+        key = m.group(1)
+        val = os.environ.get(key)
+        if val is None:
+            if key not in unresolved:
+                unresolved.append(key)
+            return m.group(0)  # leave as-is
+        substituted[key] = "set"
+        return val
+
+    compiled = _PLACEHOLDER_RE.sub(_replace, raw)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    dst_path.write_text(compiled)
+    return {"substituted_keys": list(substituted), "unresolved": unresolved}
 
 
 def main() -> int:
@@ -73,15 +105,26 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
+    # Compile-step: substitute env-var placeholders (e.g. <HARVEST_API_KEY>)
+    # before handing the playbook to the Deepline CLI. Compiled file lands at
+    # tmp/<playbook-stem>.compiled.jsonc — gitignored.
+    compiled_path = args.playbook.with_name(f"{args.playbook.stem}.compiled{args.playbook.suffix}")
+    compile_audit = compile_playbook(args.playbook, compiled_path)
+
     print(f"Enriching: {args.csv_path}")
-    print(f"Playbook:  {args.playbook}")
+    print(f"Playbook:  {args.playbook}  →  {compiled_path}")
+    if compile_audit["substituted_keys"]:
+        print(f"Compiled:  substituted {compile_audit['substituted_keys']}")
+    if compile_audit["unresolved"]:
+        print(f"Compiled:  WARNING — unresolved placeholders {compile_audit['unresolved']} "
+              f"(Deepline will fail when those steps run)", file=sys.stderr)
     print(f"Output:    {args.output}")
     if args.rows:
         print(f"Row range: {args.rows}")
     print()
 
     result = run_enrichment(
-        playbook_path=args.playbook,
+        playbook_path=compiled_path,
         csv_path=args.csv_path,
         output_path=args.output,
         row_range=args.rows,
@@ -95,6 +138,15 @@ def main() -> int:
             print(f"Session UI: {result['session_url']}")
         if result.get("credits_used") is not None:
             print(f"Credits used: {result['credits_used']}")
+        # Always emit a flat-column companion next to the deepline-native CSV
+        try:
+            sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+            from flatten import flatten, default_output_path
+            flat_path = default_output_path(args.output)
+            n = flatten(args.output, flat_path)
+            print(f"Flat CSV:   {flat_path} ({n} rows)")
+        except Exception as e:
+            print(f"  (flatten step skipped: {e})", file=sys.stderr)
         return 0
     else:
         print("Run failed.", file=sys.stderr)
