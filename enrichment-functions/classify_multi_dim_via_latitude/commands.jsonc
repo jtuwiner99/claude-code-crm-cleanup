@@ -1,0 +1,71 @@
+// commands.jsonc — classify_multi_dim_via_latitude @ 1.0.0
+//
+// Sibling to classify_via_latitude. ONE Latitude call classifies
+// multiple categorical dimensions from the same input.
+//
+// Pipeline (mirrors classify_via_latitude):
+//   1. build_request    — JS: serialize dimensions, compose POST body.
+//   2. latitude_call    — HTTP: POST to Latitude documents/run.
+//   3. compose_output   — JS: extract dimensions_result, emit declared outputs.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.dimensions             required array of {name, categories_json, label?}
+//   row.input.parameters             required object (the entity being classified)
+//   row.input.prompt_path            optional (default 'multi_dim_classification/classify')
+//   row.input.latitude_project_id    optional (defaults to LATITUDE_PROJECT_ID env var)
+//   row.input.latitude_version       optional (default "live")
+//   row.input.latitude_api_key       required
+//   row.input.timeout_ms             optional (default 60000)
+//
+// Latitude prompt response contract — see latitude-prompt-spec.md:
+//   {
+//     summary: <string>,
+//     dimensions_result: {
+//       <dim_name>: { category: <string>, label: <string>, reasoning: <string> },
+//       ...
+//     },
+//     reasoning: <string>
+//   }
+
+{
+  "commands": [
+    {
+      "alias": "build_request",
+      "description": "Compose Latitude POST body. Stringifies each dimension's categories_json and merges into parameters. Defaults applied here so downstream HTTP step is pure transport.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const projectId = i.latitude_project_id || (typeof env !== 'undefined' && env.LATITUDE_PROJECT_ID) || null; if (!projectId) throw new Error('latitude_project_id missing — pass input.latitude_project_id or set LATITUDE_PROJECT_ID env var'); const version = i.latitude_version || 'live'; const promptPath = i.prompt_path || 'multi_dim_classification/classify'; const url = 'https://gateway.latitude.so/api/v3/projects/' + projectId + '/versions/' + encodeURIComponent(version) + '/documents/run'; const dims = Array.isArray(i.dimensions) ? i.dimensions : []; if (!dims.length) throw new Error('dimensions array missing or empty'); const dimsForPrompt = dims.map(function(d) { if (!d || !d.name) throw new Error('every dimension must have a name'); if (!Array.isArray(d.categories_json)) throw new Error('dimension ' + d.name + ' missing categories_json array'); return { name: d.name, label: d.label || d.name, categories_json: JSON.stringify(d.categories_json) }; }); const params = Object.assign({}, i.parameters || {}); params.dimensions = JSON.stringify(dimsForPrompt); params.dimensions_count = dimsForPrompt.length; return { url: url, body: { parameters: params, path: promptPath, stream: false }, timeout_ms: i.timeout_ms || 60000, dimension_names: dims.map(function(d){return d.name;}) };"
+      }
+    },
+
+    {
+      "alias": "latitude_call",
+      "description": "POST to Latitude documents/run. Same pattern as classify_via_latitude.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.url)",
+      "payload": {
+        "method": "POST",
+        "url": "{{build_request.result.data.url}}",
+        "headers": {
+          "Authorization": "Bearer {{row.input.latitude_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "body_json": "{{build_request.result.data.body}}",
+        "timeout_ms": "{{build_request.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const body = r.body || r.data || r; const resp = body && body.response; if (!resp) return { ok: false, error: 'no response field', raw: body }; let obj = resp.object; if (!obj && resp.text) { if (typeof resp.text === 'object') { obj = resp.text; } else if (typeof resp.text === 'string' && resp.text.trim()) { try { obj = JSON.parse(resp.text.replace(/^```json\\n?/, '').replace(/\\n?```$/, '')); } catch (e) { return { ok: false, error: 'json parse failed', raw: resp.text }; } } } if (!obj) return { ok: false, error: 'no object in response', raw: resp }; return { ok: true, parsed: obj, conversation_uuid: (body.uuid || body.conversationUuid || null), raw: body }; }"
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Extract dimensions_result + summary + reasoning. Emit nulls + raw_response.error on failure.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const lc = row.latitude_call && row.latitude_call.result; const ext = lc && lc.data; const ok = ext && ext.ok === true; const obj = ok ? ext.parsed : null; const dimNames = (row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.dimension_names) || []; const out = { dimensions_result: null, summary: null, reasoning: null, latitude_conversation_uuid: ext ? (ext.conversation_uuid || null) : null, raw_response: ok ? ext.raw : { error: (ext && ext.error) || 'latitude_call did not run', raw: ext && ext.raw } }; if (!ok || !obj) return out; out.summary = obj.summary || null; out.reasoning = obj.reasoning || null; const dr = obj.dimensions_result || {}; const result = {}; for (let n = 0; n < dimNames.length; n++) { const dimName = dimNames[n]; const v = dr[dimName]; if (v && typeof v === 'object') { result[dimName] = { category: v.category || null, label: v.label || null, reasoning: v.reasoning || null }; } else { result[dimName] = null; } } out.dimensions_result = result; return out;"
+      }
+    }
+  ]
+}

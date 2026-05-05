@@ -1,0 +1,133 @@
+name: research_signal_via_latitude
+version: 1.0.0
+status: ported_from_clay  # Net-new design; Clay table reps used to do this manually.
+description: >
+  Atomic research primitive: look for ONE specific signal on a target
+  company's website and return whether it's present + supporting evidence.
+  Routes through Latitude using a single agency-level prompt at
+  `account_research/find_signal` that takes the signal definition as a
+  parameter (analog to how `classify_via_latitude` takes `categories_json`).
+  Designed to fan out — composer functions like `classify_via_research_agents`
+  call this once per signal in your classification model. Each
+  call is independent and can run in parallel at the playbook level.
+  Output is structured: `{found: bool, evidence: string, confidence: int,
+  source_pages: array}`. The `found` boolean is the gate; `evidence` cites
+  the specific text/URLs that support the verdict so downstream classifiers
+  (and operators) can audit.
+
+inputs:
+  - name: signal_name
+    type: string
+    required: true
+    description: Snake_case identifier for the signal (e.g. "managed_services_offered"). Surfaces in compose_output's verification_signals so multiple signals on the same row can be distinguished.
+  - name: look_for
+    type: string
+    required: true
+    description: >
+      Free-form prose describing what to look for. Lifted from the
+      your classification model `research_signals[i].look_for`.
+      Be specific — list keywords, named services, page sections.
+      Example: "Does the company's services page or homepage explicitly
+      mention 'Managed IT', 'Managed Support', 'Managed Services'?"
+  - name: evidence_format
+    type: string
+    required: false
+    default: "boolean + 1-2 quotes from supporting pages with URLs"
+    description: What shape the AI should return evidence in. Default suggests boolean + quotes + URLs.
+  - name: search_pages_hint
+    type: string
+    required: false
+    description: Comma-separated common page paths to start with (e.g. "/services, /managed-it"). Helps the AI focus its research.
+  - name: domain
+    type: string
+    required: true
+    description: Target company's domain (output of `normalize_domain_and_name`).
+  - name: company_name
+    type: string
+    required: true
+    description: Target company name (output of `normalize_domain_and_name`).
+  - name: company_summary
+    type: string
+    required: false
+    description: Optional dense summary (output of `company_summary_from_website`). Used as fallback context when the AI can't fetch the website.
+  - name: latitude_prompt_path
+    type: string
+    required: false
+    default: account_research/find_signal
+    description: Latitude document path. Defaults to the agency prompt.
+  - name: latitude_project_id
+    type: string
+    required: false
+    description: Latitude project ID (numeric). Defaults to LATITUDE_PROJECT_ID env var.
+  - name: latitude_version
+    type: string
+    required: false
+    default: live
+  - name: latitude_api_key
+    type: string
+    required: true
+    description: Caller-supplied. Same security model as classify_via_latitude.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 60000
+
+outputs:
+  - name: found
+    type: boolean
+    nullable: true
+    description: True iff the AI judges the signal present with reasonable confidence. Null on Latitude failure.
+  - name: evidence
+    type: string
+    nullable: true
+    description: 1-2 sentences citing specific text / URLs that support the verdict. Null when found=false (no evidence to cite) or AI failure.
+  - name: confidence
+    type: integer
+    nullable: true
+    description: 0-100. AI's self-graded confidence. Below 50 should be treated as effectively "uncertain — re-research or fall back to summary".
+  - name: source_pages
+    type: array
+    items: string
+    nullable: true
+    description: URLs the AI consulted (best-effort — Perplexity exposes citation URLs).
+  - name: latitude_conversation_uuid
+    type: string
+    nullable: true
+  - name: verification_signals
+    type: object
+    description: Audit trail.
+
+providers:
+  - name: generic_http_request
+    role: HTTP call to Latitude documents/run endpoint.
+
+ai_calls:
+  - tier: signal_research
+    primitive: latitude
+    estimated_tokens: 2500
+    runs_when: always (when called)
+estimated_cost_usd: 0.005
+
+invariants:
+  - One Latitude call per invocation. Cost predictable.
+  - Default-to-not-found on Latitude failure. The AI can't disprove a signal it didn't research; null is honest. Composer (e.g. classify_via_research_agents) handles null appropriately when applying rules.
+  - The signal definition (look_for + evidence_format) is your contract. Changes to the definition warrant re-running on the golden dataset.
+  - Each call is independent — composer must invoke once per signal. NO batching today (different signals = different Latitude calls). Future optimization could batch via prompt structuring but introduces parsing complexity.
+
+clay_origin:
+  source: connectwise-msp-classification
+  exported_at: 2026-05-04
+  port_notes: >
+    ConnectWise's classification used multiple Claygent (= research agent)
+    columns each looking for one specific signal — managed services offered,
+    cybersecurity offered, office supplies offered. Each column's output
+    fed into a final aggregation column that applied the rules. This
+    function generalizes that pattern: one atomic research primitive +
+    a separate composer function (classify_via_research_agents) that fans
+    out to N signals + rules-applies the composed evidence.
+
+related:
+  - upstream: normalize_domain_and_name → company_summary_from_website (optional)
+  - composes_with: classify_via_research_agents (the canonical fan-out consumer)
+  - prompt_spec: latitude-prompt-spec.md (in this directory)
+  - schema: wiki/classification-research-signals-schema.md

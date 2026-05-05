@@ -1,0 +1,143 @@
+// commands.jsonc — classify_via_research_agents @ 1.0.0
+//
+// Composer for signal-heavy classifications. Lives ALONGSIDE classify_via_latitude
+// — recipes pick per-property which path to use.
+//
+// Pipeline shape (your research_signals[] determines fanout count):
+//   1. parse_signals       — JS: parse research_signals_json into structured array.
+//   2. signal_<name> × N   — HTTP: one Latitude call per signal, parallel.
+//   3. assemble_evidence   — JS: collect per-signal results into research_signal_evidence_json.
+//   4. final_classify      — HTTP: Latitude call to classify_with_signals prompt.
+//   5. compose_output      — JS: extract category + reasoning + signal_evidence audit trail.
+//
+// NOTE: Because the number of signal calls depends on your model,
+// this commands.jsonc is illustrative — the actual command list is BUILT
+// PROGRAMMATICALLY by the plugin adapter
+// (the classify_with_signals plugin).
+// The plugin reads your classification-models JSON at compile time
+// and emits one signal_<name> command per entry. Hosted-workflow consumption
+// of this commands.jsonc directly would require the plugin to also generate
+// a hosted version, OR for the user to compile via the standard compile path.
+//
+// Input shape (when called as a hosted sub-workflow with N=1 signal — illustrative):
+//   row.input.property_id                    required
+//   row.input.categories_json                required
+//   row.input.research_signals_json          required (array of {name, look_for, ...})
+//   row.input.classification_rules           required
+//   row.input.edge_cases_json                optional (default "[]")
+//   row.input.notes_to_ai                    optional
+//   row.input.account_signals                required
+//   row.input.latitude_classify_prompt_path  optional (default account_classification/classify_with_signals)
+//   row.input.latitude_research_prompt_path  optional (default account_research/find_signal)
+//   row.input.latitude_project_id            optional (defaults to LATITUDE_PROJECT_ID env var)
+//   row.input.latitude_version               optional (default "live")
+//   row.input.latitude_api_key               required
+//   row.input.timeout_ms                     optional (default 60000)
+
+{
+  "commands": [
+    {
+      "alias": "parse_signals",
+      "description": "Parse research_signals_json into a structured array. Validates each entry has at least name + look_for.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; if (!i.research_signals_json) throw new Error('research_signals_json required'); let signals; try { signals = JSON.parse(i.research_signals_json); } catch (e) { throw new Error('research_signals_json parse failed: ' + e.message); } if (!Array.isArray(signals) || signals.length === 0) throw new Error('research_signals must be a non-empty array'); for (const s of signals) { if (!s.name || !s.look_for) throw new Error('each signal must have name + look_for; got ' + JSON.stringify(s)); } return { signals: signals, count: signals.length };"
+      }
+    },
+
+    // -------------------------------------------------------------------
+    // HOSTED SHAPE NOTE:
+    //
+    // For the hosted-workflow consumption of THIS file as-is, only ONE
+    // signal_call command is shown below as a placeholder. The plugin
+    // adapter generates one command per signal in your model at compile
+    // time (see plugins/classify_with_signals.py).
+    //
+    // If you need to deploy this function as a hosted Deepline workflow
+    // for a customer, run the compile path which materializes the
+    // per-signal commands at compile time, OR extend this commands.jsonc
+    // with a `for_each` block once Deepline supports it.
+    // -------------------------------------------------------------------
+
+    {
+      "alias": "signal_call_PLACEHOLDER",
+      "description": "Placeholder for one research_signal call. compile-time replaces this with one command per signal in your model.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.parse_signals && row.parse_signals.result && row.parse_signals.result.data && row.parse_signals.result.data.count > 0)",
+      "payload": {
+        "method": "POST",
+        "url": "https://gateway.latitude.so/api/v3/projects/{{row.input.latitude_project_id}}/versions/{{row.input.latitude_version}}/documents/run",
+        "headers": {
+          "Authorization": "Bearer {{row.input.latitude_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "path": "{{row.input.latitude_research_prompt_path}}",
+          "parameters": {
+            "signal_name": "<from signal[0]>",
+            "look_for": "<from signal[0]>",
+            "evidence_format": "<from signal[0]>",
+            "search_pages_hint": "<from signal[0]>",
+            "domain": "{{row.input.account_signals_domain}}",
+            "company_name": "{{row.input.account_signals_company_name}}",
+            "company_summary": "{{row.input.account_signals_company_summary}}"
+          },
+          "stream": false
+        },
+        "timeout_ms": "{{row.input.timeout_ms}}"
+      }
+    },
+
+    {
+      "alias": "assemble_evidence",
+      "description": "Collect per-signal results into research_signal_evidence_json that the final classifier consumes. The plugin adapter generates this command's body to reference the actual signal_<name> aliases at compile time.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "throw new Error('This command is materialized at compile time by the plugin adapter — see plugins/classify_with_signals.py.');"
+      }
+    },
+
+    {
+      "alias": "final_classify",
+      "description": "Apply rules to synthesized signal evidence. Uses the classify_with_signals prompt (NO Perplexity).",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.assemble_evidence && row.assemble_evidence.result && row.assemble_evidence.result.data && row.assemble_evidence.result.data.research_signal_evidence_json)",
+      "payload": {
+        "method": "POST",
+        "url": "https://gateway.latitude.so/api/v3/projects/{{row.input.latitude_project_id}}/versions/{{row.input.latitude_version}}/documents/run",
+        "headers": {
+          "Authorization": "Bearer {{row.input.latitude_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "path": "{{row.input.latitude_classify_prompt_path}}",
+          "parameters": {
+            "property_id": "{{row.input.property_id}}",
+            "categories_json": "{{row.input.categories_json}}",
+            "research_signal_evidence_json": "{{assemble_evidence.result.data.research_signal_evidence_json}}",
+            "classification_rules": "{{row.input.classification_rules}}",
+            "edge_cases_json": "{{row.input.edge_cases_json}}",
+            "notes_to_ai": "{{row.input.notes_to_ai}}",
+            "account_signals": "{{row.input.account_signals}}"
+          },
+          "stream": false
+        },
+        "timeout_ms": "{{row.input.timeout_ms}}"
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Extract category + reasoning + signal_evidence audit trail. Default-to-null on classifier failure (you audit + retry).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "throw new Error('This command is materialized at compile time by the plugin adapter — see plugins/classify_with_signals.py.');"
+      }
+    }
+  ]
+}

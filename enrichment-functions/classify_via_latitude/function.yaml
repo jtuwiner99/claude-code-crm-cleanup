@@ -1,0 +1,172 @@
+name: classify_via_latitude
+version: 1.1.0
+status: ported_from_production
+description: >
+  Generic classification function that routes through Latitude's AI Gateway.
+  One function classifies any property — company type, industry, contact
+  department, seniority, plus multi-select cases like activity tagging from
+  destination research — by varying the prompt path, the categories
+  taxonomy, and the output mode (single vs. multi). The Latitude prompt is
+  the wrapper (instruction layer); the categories list is the data
+  (definition layer); the output mode is the cardinality of the answer.
+  All three vary independently: categories evolve via your
+  your taxonomy config; the
+  prompt evolves via Latitude GEPA; the cardinality is a per-property
+  decision baked into the calling recipe. This function is the runtime
+  adapter that joins them.
+
+inputs:
+  - name: prompt_path
+    type: string
+    required: true
+    description: >
+      Latitude document path, e.g. `category_enrichment/enrichment_classify`
+      for company classification or `contact_classification/seniority` for
+      contact seniority. The prompt at this path is responsible for
+      research + structured output.
+  - name: parameters
+    type: object
+    required: true
+    description: >
+      Variables to inject into the Latitude prompt. Shape varies per
+      prompt — for company classification typically `{domain: <string>}`;
+      for contact classification typically `{job_title: <string>,
+      company_summary: <string>, employee_count: <number>}`. Whatever the
+      Latitude prompt's `{{variables}}` reference must be present here.
+      `categories_json` is merged into this object automatically — callers
+      should NOT include it.
+  - name: categories_json
+    type: array
+    required: true
+    description: >
+      Categories taxonomy. Array of category objects with `value`, `label`,
+      `description`, `positive_signals`, `negative_signals`. See
+      `preset_categories/` for agency defaults (company_type, etc.) and
+      the classification-schema rules (style guide for rule-writing) for the
+      schema. The function serializes this to a JSON string and passes it
+      as the `categories_json` Latitude variable.
+  - name: latitude_project_id
+    type: string
+    required: false
+    description: >
+      Latitude project numeric id. Defaults to env var
+      `LATITUDE_PROJECT_ID`. Override per-project when a customer has
+      their own Latitude project (rare; usually one shared project hosts
+      all classification prompts and projects are scoped per-project only
+      when their data must not co-mingle with other customers').
+  - name: latitude_version
+    type: string
+    required: false
+    default: live
+    description: >
+      Latitude version identifier. `live` for the published version;
+      `<commit-uuid>` for a specific draft. Per the Latitude v3 capabilities
+      memo, `live` is locked — push experimental changes to a draft commit
+      first, validate, then publish.
+  - name: latitude_api_key
+    type: string
+    required: true
+    description: >
+      Latitude API key. Caller-supplied. NOTE — Deepline currently has no
+      runtime secret-store primitive (only webhook trigger secrets). The
+      key value WILL end up inlined in the stored Deepline workflow JSON
+      whenever this function's commands are compiled into a hosted
+      workflow. The the compiler is responsible for sourcing the key
+      from `.env` (`LATITUDE_API_KEY`) and injecting it at compile time.
+      Treat the workflow JSON as containing live credentials — restrict
+      access accordingly. See README for the security model.
+  - name: output_mode
+    type: string
+    required: false
+    default: single
+    enum: [single, multi]
+    description: >
+      Cardinality of the classification result. `single` (default) expects
+      the prompt to return one category and emits string-typed `category` /
+      `category_label` outputs. `multi` expects the prompt to return an
+      array of categories and emits array-typed `categories` /
+      `category_labels` outputs. The Latitude prompt at `prompt_path` MUST
+      match the declared mode — see README for the contract per mode.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 60000
+    description: HTTP timeout for the Latitude call.
+
+outputs:
+  # Single-select outputs — populated when output_mode=single
+  - name: category
+    type: string
+    nullable: true
+    description: >
+      [single mode] Internal HubSpot value (e.g. `SaaS`, `senior_director`).
+      What gets written back to CRM. Null in multi mode or on failure.
+  - name: category_label
+    type: string
+    nullable: true
+    description: >
+      [single mode] Human-readable label. For trace UX only — never written
+      to HubSpot. Null in multi mode or on failure.
+
+  # Multi-select outputs — populated when output_mode=multi
+  - name: categories
+    type: array
+    items: string
+    nullable: true
+    description: >
+      [multi mode] Array of internal HubSpot values selected by the prompt.
+      Empty array `[]` is a valid result (none of the categories applied).
+      Null in single mode or on call failure (NOT empty array — empty
+      array means "the prompt ran and decided no categories matched").
+  - name: category_labels
+    type: array
+    items: string
+    nullable: true
+    description: >
+      [multi mode] Array of human labels. Same length and order as
+      `categories`. For trace UX only — never written to HubSpot.
+
+  # Common outputs — populated regardless of mode
+  - name: summary
+    type: string
+    nullable: true
+    description: Latitude's 2-3-sentence summary of the entity as researched by the prompt.
+  - name: reasoning
+    type: string
+    nullable: true
+    description: >
+      Why the chosen category/categories fit. 2-4 sentences in single mode;
+      may be longer in multi mode (typically one bullet per selected
+      category explaining the evidence).
+  - name: latitude_conversation_uuid
+    type: string
+    nullable: true
+    description: >
+      Latitude conversation UUID — links this run to the corresponding
+      trace in Latitude UI. Used by the QA loop to annotate runs and
+      by ops for debugging.
+  - name: raw_response
+    type: object
+    description: Full Latitude payload. Cached for downstream consumers and audit.
+
+providers:
+  - name: generic_http_request
+    role: HTTP POST to Latitude `/api/v3/projects/<id>/versions/<version>/documents/run`.
+
+ai_calls:
+  - tier: latitude_classification
+    primitive: latitude_managed
+    model_tier: configured at the Latitude prompt level (per-prompt model selection)
+    estimated_tokens: 4000  # research + classification combined
+estimated_cost_usd: 0.01
+
+invariants:
+  - The function does NOT validate that returned categories are present in `categories_json`. The Latitude prompt is responsible for category constraint enforcement; downstream callers SHOULD verify.
+  - `latitude_conversation_uuid` is populated whenever the HTTP call succeeded (HTTP 2xx), regardless of whether classification succeeded.
+  - Any HTTP non-2xx, timeout, or response-parse failure → ALL classification outputs (`category` + `category_label` in single mode; `categories` + `category_labels` in multi mode; plus `summary` and `reasoning` in both) emit null and `raw_response.error` is populated.
+  - In multi mode, an empty array `categories: []` is a valid run result (the prompt decided nothing matched). Distinguish from null (call failed) at the caller.
+  - The non-active mode's outputs (e.g. `categories`/`category_labels` when `output_mode=single`) are always null. Don't read them in the wrong mode.
+
+related:
+  - production_reference: tmp/workflow-payloads/account_enrichment.json `classify_company_type` step
+  - presets: preset_categories/

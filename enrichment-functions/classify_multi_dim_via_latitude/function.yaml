@@ -1,0 +1,134 @@
+name: classify_multi_dim_via_latitude
+version: 1.0.0
+status: net-new
+description: >
+  Multi-dimensional classification through ONE Latitude call. Sibling to
+  `classify_via_latitude`, which handles single-property classifications
+  (one prompt → one category from one taxonomy). This function handles
+  the case where multiple categorical dimensions should be judged from
+  the same input — e.g. contact persona AND seniority from one title;
+  industry AND vertical from one company; department AND function from
+  one role.
+  Same wrapper-vs-data philosophy as `classify_via_latitude`: the
+  Latitude prompt is the wrapper, the categories taxonomy per dimension
+  is the data, the dimensions list is the cardinality. All three vary
+  independently. Returns a single `latitude_conversation_uuid` covering
+  all dimensions (the call site is one Latitude run) — downstream QA
+  loops keyed off "one uuid per classified property" must update for
+  multi-dim runs (see invariants).
+
+inputs:
+  - name: dimensions
+    type: array
+    required: true
+    description: >
+      Array of dimensions to classify. Each entry:
+      `{ name: <string>, categories_json: <array-of-category-objects>, label: <optional-string> }`.
+      `name` is the key the prompt returns under `dimensions_result`
+      (e.g. `persona`, `seniority`). `categories_json` is the same
+      shape as `classify_via_latitude.categories_json` — array of
+      `{value, label, description, positive_signals[], negative_signals[]}`.
+      `label` is optional human-readable name for the dimension (used
+      in the prompt for clarity); defaults to `name`. The function
+      stringifies each dimension's categories_json before passing to
+      Latitude.
+  - name: parameters
+    type: object
+    required: true
+    description: >
+      Variables to inject into the Latitude prompt — the entity being
+      classified. Shape varies per prompt: for contact persona+seniority
+      typically `{job_title, company_summary, profile_about, headline}`.
+      Whatever the Latitude prompt's `{{variables}}` reference must be
+      present here. `dimensions` and `dimensions_count` are merged into
+      this object automatically — callers should NOT include those keys.
+  - name: prompt_path
+    type: string
+    required: false
+    default: multi_dim_classification/classify
+    description: >
+      Latitude document path. Default is the agency-level multi-dim
+      prompt at `multi_dim_classification/classify` (see
+      `latitude-prompt-spec.md` for the prompt contract). Override
+      per-project for fine-tuned multi-dim variants (rare — most use
+      the agency prompt with their dimensions list).
+  - name: latitude_project_id
+    type: string
+    required: false
+    description: >
+      Latitude project numeric id. Defaults to env var
+      `LATITUDE_PROJECT_ID`.
+  - name: latitude_version
+    type: string
+    required: false
+    default: live
+    description: Latitude version. `live` for published, `<commit-uuid>` for a draft. Push experimental changes to a draft first.
+  - name: latitude_api_key
+    type: string
+    required: true
+    description: >
+      Latitude API key. Same security model as `classify_via_latitude` —
+      baked into the compiled playbook. the compiler is responsible
+      for sourcing from `.env` and injecting at compile time.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 60000
+
+outputs:
+  - name: dimensions_result
+    type: object
+    nullable: true
+    description: >
+      Object keyed by dimension name. Each value:
+      `{ category: <string-internal-value>, label: <human-readable>, reasoning: <2-3-sentences> }`.
+      Example for contact persona+seniority:
+      `{ persona: { category: 'sales', label: 'Sales', reasoning: '...' }, seniority: { category: 'vp_or_head', label: 'VP / Head', reasoning: '...' } }`.
+      Null when the Latitude call failed.
+  - name: summary
+    type: string
+    nullable: true
+    description: One-paragraph summary of the entity used by all dimensions' classifications.
+  - name: reasoning
+    type: string
+    nullable: true
+    description: >
+      Cross-cutting reasoning that informed multiple dimensions
+      simultaneously. Per-dimension reasoning lives in
+      `dimensions_result.<name>.reasoning`.
+  - name: latitude_conversation_uuid
+    type: string
+    nullable: true
+    description: >
+      Single Latitude conversation UUID for the call. ALL dimensions
+      share this UUID — downstream QA loops that previously assumed
+      "one uuid per classified property" must be updated to handle
+      multi-dim runs.
+  - name: raw_response
+    type: object
+    description: Full Latitude payload. Cached for audit and QA.
+
+providers:
+  - name: generic_http_request
+    role: HTTP POST to Latitude `/api/v3/projects/<id>/versions/<version>/documents/run`. Same shape as `classify_via_latitude`.
+
+ai_calls:
+  - tier: latitude_multi_dim_classification
+    primitive: latitude_managed
+    model_tier: configured at the Latitude prompt level
+    estimated_tokens: 5000  # research + N classifications combined; baseline assumes 2 dimensions
+estimated_cost_usd: 0.012  # ~20% more than single-dim; far cheaper than N separate Latitude calls.
+
+invariants:
+  - One Latitude call per row regardless of dimension count. Cost predictable.
+  - Single `latitude_conversation_uuid` covers all dimensions in a run. Downstream QA loops that keyed off "one uuid per property" MUST update — see the QA loop directive for the migration.
+  - When the call fails (HTTP non-2xx, timeout, parse error), `dimensions_result=null`, `summary=null`, `reasoning=null`. Distinguish from `dimensions_result={}` (empty object — call succeeded, prompt returned no dimensions; should never happen but is technically possible).
+  - The Latitude prompt at `prompt_path` MUST emit a top-level `dimensions_result` object with keys matching the input `dimensions[].name`. If a dimension is missing from the response, the function emits null for that dimension's slot in `dimensions_result`.
+  - The function does NOT validate that returned categories are present in each dimension's categories_json. The Latitude prompt is responsible for category constraint enforcement.
+  - `dimensions[]` is order-significant for prompt clarity but NOT for output correctness — `dimensions_result` is a key-value object, not an array.
+  - Minimum dimension count: 1 (degenerates gracefully to single-dim behavior — but use `classify_via_latitude` instead in that case for cost predictability and downstream QA tooling compatibility).
+
+related:
+  - sibling: classify_via_latitude (single-dim classification — use this for any one-property classification)
+  - prompt_spec: latitude-prompt-spec.md (in this directory)
+  - first_caller: contact persona + seniority via the default_contact_cleanup recipe (see enrichment-functions/recipes/)

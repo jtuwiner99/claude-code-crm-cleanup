@@ -1,0 +1,68 @@
+// commands.jsonc — research_signal_via_latitude @ 1.0.0
+//
+// Atomic research primitive. Calls Latitude with one signal definition
+// and returns whether the signal is present + evidence. Composer functions
+// (classify_via_research_agents, future scoring extensions) fan out to this
+// once per signal in your model.
+//
+// Pipeline shape:
+//   1. build_request   — JS: compose Latitude POST body.
+//   2. latitude_call   — HTTP: POST to documents/run.
+//   3. compose_output  — JS: extract found/evidence/confidence, default-to-not-found on failure.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.signal_name              required
+//   row.input.look_for                 required
+//   row.input.evidence_format          optional
+//   row.input.search_pages_hint        optional
+//   row.input.domain                   required
+//   row.input.company_name             required
+//   row.input.company_summary          optional
+//   row.input.latitude_prompt_path     optional (default account_research/find_signal)
+//   row.input.latitude_project_id      optional (defaults to LATITUDE_PROJECT_ID env var)
+//   row.input.latitude_version         optional (default "live")
+//   row.input.latitude_api_key         required
+//   row.input.timeout_ms               optional (default 60000)
+
+{
+  "commands": [
+    {
+      "alias": "build_request",
+      "description": "Compose Latitude POST body. The agency `account_research/find_signal` prompt accepts six parameters: signal_name, look_for, evidence_format, search_pages_hint, domain, company_name, company_summary.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const projectId = i.latitude_project_id || (typeof env !== 'undefined' && env.LATITUDE_PROJECT_ID) || null; if (!projectId) throw new Error('latitude_project_id missing'); const version = i.latitude_version || 'live'; const promptPath = i.latitude_prompt_path || 'account_research/find_signal'; const url = 'https://gateway.latitude.so/api/v3/projects/' + projectId + '/versions/' + encodeURIComponent(version) + '/documents/run'; if (!i.signal_name || !i.look_for || !i.domain || !i.company_name) throw new Error('signal_name, look_for, domain, company_name all required'); const params = { signal_name: i.signal_name, look_for: i.look_for, evidence_format: i.evidence_format || 'boolean + 1-2 quotes from supporting pages with URLs', search_pages_hint: i.search_pages_hint || '', domain: i.domain, company_name: i.company_name, company_summary: i.company_summary || '' }; return { url: url, body: { parameters: params, path: promptPath, stream: false }, timeout_ms: i.timeout_ms || 60000 };"
+      }
+    },
+
+    {
+      "alias": "latitude_call",
+      "description": "POST to Latitude documents/run.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.url)",
+      "payload": {
+        "method": "POST",
+        "url": "{{build_request.result.data.url}}",
+        "headers": {
+          "Authorization": "Bearer {{row.input.latitude_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "body_json": "{{build_request.result.data.body}}",
+        "timeout_ms": "{{build_request.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const body = r.body || r.data || r; const resp = body && body.response; if (!resp) return { ok: false, error: 'no response field', raw: body }; let obj = resp.object; if (!obj && resp.text) { if (typeof resp.text === 'object') { obj = resp.text; } else if (typeof resp.text === 'string' && resp.text.trim()) { try { obj = JSON.parse(resp.text.replace(/^```json\\n?/, '').replace(/\\n?```$/, '')); } catch (e) { return { ok: false, error: 'json parse failed', raw: resp.text }; } } } if (!obj) return { ok: false, error: 'no object in response', raw: resp }; return { ok: true, parsed: obj, conversation_uuid: (body.uuid || body.conversationUuid || null), raw: body }; }"
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Extract found / evidence / confidence / source_pages. Default-to-not-found on Latitude failure.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const lc = row.latitude_call && row.latitude_call.result; const ext = lc && lc.data; const ok = ext && ext.ok === true; const obj = ok ? ext.parsed : null; if (!ok || !obj) { return { found: null, evidence: null, confidence: null, source_pages: null, latitude_conversation_uuid: ext ? (ext.conversation_uuid || null) : null, verification_signals: { latitude: { ran: !!lc, ok: false, error: (ext && ext.error) || 'latitude_call did not run' } } }; } return { found: typeof obj.found === 'boolean' ? obj.found : null, evidence: obj.evidence || null, confidence: typeof obj.confidence === 'number' ? obj.confidence : null, source_pages: Array.isArray(obj.source_pages) ? obj.source_pages : null, latitude_conversation_uuid: ext.conversation_uuid || null, verification_signals: { latitude: { ran: true, ok: true, conversation_uuid: ext.conversation_uuid || null } } };"
+      }
+    }
+  ]
+}

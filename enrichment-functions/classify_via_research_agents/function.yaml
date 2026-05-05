@@ -1,0 +1,156 @@
+name: classify_via_research_agents
+version: 1.0.0
+status: ported_from_clay  # ConnectWise-style multi-signal classification, generalized.
+description: >
+  Composer for signal-heavy classifications. Fans out N parallel
+  `research_signal_via_latitude` calls (one per signal in your
+  classification model) and feeds the synthesized evidence into a final
+  rules-applying classification call. Lives ALONGSIDE `classify_via_latitude`
+  — recipes use the existing single-prompt classifier for simple
+  classifications and this composer for hard ones (MSP detection, scientific
+  vs. business segmentation, manufacturer-vs-distributor, etc.).
+  Categories list comes from your taxonomy config (same source as classify_via_latitude). Research signals + rules
+  come from a per-property JSON file at
+  `your-recipe-folder/classification-models/<property_id>.json`
+  (schema: the classification-research-signals schema).
+  The final classification call uses a different Latitude prompt
+  (`account_classification/classify_with_signals`) — NO Perplexity research
+  in that call; it's pure rules-applying synthesis over the already-fetched
+  signal evidence.
+
+inputs:
+  - name: property_id
+    type: string
+    required: true
+    description: HubSpot/Salesforce property name (matches your taxonomy config).
+  - name: categories_json
+    type: string
+    required: true
+    description: >
+      JSON-stringified list of categories (same shape as classify_via_latitude's
+      categories_json). Plugin loads from your Output Value
+      Definitions sheet.
+  - name: research_signals_json
+    type: string
+    required: true
+    description: >
+      JSON-stringified array of signal definitions from your
+      classification model (research_signals[] field). Each entry: {name,
+      look_for, evidence_format?, search_pages_hint?}.
+  - name: classification_rules
+    type: string
+    required: true
+    description: >
+      Free-form prose rules from your classification model. The
+      final classifier prompt receives this verbatim and applies it to the
+      research signal evidence + categories.
+  - name: edge_cases_json
+    type: string
+    required: false
+    default: "[]"
+    description: JSON-stringified array of edge-case prose hints from the model. Passed to the final classifier as soft hints.
+  - name: notes_to_ai
+    type: string
+    required: false
+    description: Operator-authored bias / philosophy notes from the model.
+  - name: account_signals
+    type: string
+    required: true
+    description: JSON-stringified row signals (domain, company_name, company_summary, etc.). Same shape used by score_account_via_latitude.
+  - name: latitude_classify_prompt_path
+    type: string
+    required: false
+    default: account_classification/classify_with_signals
+  - name: latitude_research_prompt_path
+    type: string
+    required: false
+    default: account_research/find_signal
+  - name: latitude_project_id
+    type: string
+    required: false
+  - name: latitude_version
+    type: string
+    required: false
+    default: live
+  - name: latitude_api_key
+    type: string
+    required: true
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 60000
+
+outputs:
+  - name: category
+    type: string
+    nullable: true
+    description: The classification verdict — exact `value` from the categories list. Null on failure.
+  - name: category_label
+    type: string
+    nullable: true
+  - name: reasoning
+    type: string
+    nullable: true
+    description: 2-4 sentences citing which signals + rules drove the verdict.
+  - name: summary
+    type: string
+    nullable: true
+    description: Short prose summary describing the company in the context of the property (e.g. "MSP serving SMB clients with managed IT + cybersecurity offerings").
+  - name: signal_evidence
+    type: object
+    description: >
+      Per-signal evidence: { <signal_name>: {found, evidence, confidence,
+      source_pages} }. Operator-auditable record of what each research call
+      found. Important for the iterate-classification-prompt skill (Build 2)
+      to diagnose rule-issue vs context-issue.
+  - name: confidence
+    type: integer
+    nullable: true
+  - name: latitude_conversation_uuid
+    type: string
+    nullable: true
+    description: Final classifier call's UUID. Each research call has its own UUID in signal_evidence.
+  - name: verification_signals
+    type: object
+    description: Audit trail.
+
+providers:
+  - name: generic_http_request
+    role: HTTP calls to Latitude (one per research signal + one final classification).
+
+ai_calls:
+  - tier: research_signal
+    primitive: latitude
+    estimated_tokens: 2500
+    runs_when: once per signal in research_signals_json
+  - tier: final_classification
+    primitive: latitude
+    estimated_tokens: 3000
+    runs_when: always (when called)
+estimated_cost_usd: 0.025  # 4 signals × $0.005 + 1 final call × $0.005 ≈ $0.025; varies with signal count
+
+invariants:
+  - Each research signal call is independent. They run in parallel within the row (Deepline parallelizes commands at the same level).
+  - The final classification call uses a DIFFERENT Latitude prompt (`account_classification/classify_with_signals`) — NO Perplexity. It applies rules to the synthesized signal evidence; doing more research at this stage is wasteful and confuses the model about what to weight.
+  - Default-to-null on failure. NEVER defaults to a category — operator audits null values + retries / escalates.
+  - Categories source is your taxonomy config (same as classify_via_latitude). Research signals + rules source is the classification-models JSON file. They're loaded separately by the plugin and merged at compile time.
+  - signal_evidence is the FULL per-signal record. Don't strip it; the iterate-classification-prompt skill (Build 2) needs it to diagnose failures.
+
+clay_origin:
+  source: connectwise-msp-classification
+  exported_at: 2026-05-04
+  port_notes: >
+    ConnectWise's account-type classification used multiple Claygent columns
+    (one per signal: managed_services, cybersecurity, office_supplies) feeding
+    a final aggregation column. Reps had built this manually in Clay over
+    months of iteration. This function generalizes the pattern so any
+    customer with signal-heavy classification can opt in by authoring a
+    classification-models JSON file.
+
+related:
+  - upstream: normalize_domain_and_name → company_summary_from_website (provides fallback context for research_signal calls)
+  - downstream: CRM writeback / scoring (account_scoring can consume `category` as a sub_type input)
+  - composes_with: classify_via_latitude (lives alongside; recipes pick per-property)
+  - calls_directly: research_signal_via_latitude (one call per signal in your model)
+  - schema: wiki/classification-research-signals-schema.md
+  - prompt_spec: latitude-prompt-spec.md (in this directory)

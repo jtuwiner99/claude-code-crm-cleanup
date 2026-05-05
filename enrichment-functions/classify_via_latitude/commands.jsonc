@@ -1,0 +1,72 @@
+// commands.jsonc — classify_via_latitude @ 1.1.0
+//
+// Routes a classification call through Latitude. Supports single-select
+// (default) and multi-select output modes. Single mode is a faithful port
+// of the production production account enrichment workflow's
+// `classify_company_type` step. Multi mode is the natural extension for
+// "what activities exist at this destination" / "which industries does
+// this company sell to" / etc.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.prompt_path           required
+//   row.input.parameters            required object
+//   row.input.categories_json       required array
+//   row.input.latitude_project_id   optional (defaults to LATITUDE_PROJECT_ID env var)
+//   row.input.latitude_version      optional (defaults to "live")
+//   row.input.latitude_api_key      required — caller-supplied. See README on the security model.
+//   row.input.output_mode           optional ("single" default | "multi")
+//   row.input.timeout_ms            optional (default 60000)
+//
+// Latitude prompt response contracts (per output_mode):
+//
+//   single mode →
+//     { summary, category, category_label, reasoning }
+//     where category is the EXACT internal `value` field from categories_json.
+//
+//   multi mode →
+//     { summary, categories: [<value>, ...], category_labels: [<label>, ...], reasoning }
+//     where each entry in `categories` is an EXACT internal `value` from
+//     categories_json. Empty array `[]` is a valid result.
+
+{
+  "commands": [
+    {
+      "alias": "build_request",
+      "description": "Compose Latitude POST body — merge categories_json into parameters and serialize. Defaults applied here so downstream HTTP step is pure transport.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const projectId = i.latitude_project_id || (typeof env !== 'undefined' && env.LATITUDE_PROJECT_ID) || null; if (!projectId) throw new Error('latitude_project_id missing — pass input.latitude_project_id or set LATITUDE_PROJECT_ID env var'); const version = i.latitude_version || 'live'; const url = 'https://gateway.latitude.so/api/v3/projects/' + projectId + '/versions/' + encodeURIComponent(version) + '/documents/run'; const params = Object.assign({}, i.parameters || {}); params.categories_json = JSON.stringify(i.categories_json || []); return { url: url, body: { parameters: params, path: i.prompt_path, stream: false }, timeout_ms: i.timeout_ms || 60000, output_mode: i.output_mode || 'single' };"
+      }
+    },
+
+    {
+      "alias": "latitude_call",
+      "description": "POST to Latitude documents/run. Auth header is the caller-supplied API key.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.url)",
+      "payload": {
+        "method": "POST",
+        "url": "{{build_request.result.data.url}}",
+        "headers": {
+          "Authorization": "Bearer {{row.input.latitude_api_key}}",
+          "Content-Type": "application/json"
+        },
+        "body_json": "{{build_request.result.data.body}}",
+        "timeout_ms": "{{build_request.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const body = r.body || r.data || r; const resp = body && body.response; if (!resp) return { ok: false, error: 'no response field', raw: body }; let obj = resp.object; if (!obj && resp.text) { if (typeof resp.text === 'object') { obj = resp.text; } else if (typeof resp.text === 'string' && resp.text.trim()) { try { obj = JSON.parse(resp.text.replace(/^```json\\n?/, '').replace(/\\n?```$/, '')); } catch (e) { return { ok: false, error: 'json parse failed', raw: resp.text }; } } } if (!obj) return { ok: false, error: 'no object in response', raw: resp }; return { ok: true, parsed: obj, conversation_uuid: (body.uuid || body.conversationUuid || null), raw: body }; }"
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Branch on output_mode. Single emits string-typed category; multi emits array-typed categories. Failure modes emit nulls plus raw_response.error.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const lc = row.latitude_call && row.latitude_call.result; const ext = lc && lc.data; const ok = ext && ext.ok === true; const obj = ok ? ext.parsed : null; const mode = (row.build_request && row.build_request.result && row.build_request.result.data && row.build_request.result.data.output_mode) || 'single'; const out = { category: null, category_label: null, categories: null, category_labels: null, summary: null, reasoning: null, latitude_conversation_uuid: ext ? (ext.conversation_uuid || null) : null, raw_response: ok ? ext.raw : { error: (ext && ext.error) || 'latitude_call did not run', raw: ext && ext.raw } }; if (!ok) return out; out.summary = obj.summary || null; out.reasoning = obj.reasoning || null; if (mode === 'multi') { const cats = Array.isArray(obj.categories) ? obj.categories : []; const labels = Array.isArray(obj.category_labels) ? obj.category_labels : []; out.categories = cats; out.category_labels = labels.length === cats.length ? labels : cats.map(function(){return null;}); } else { out.category = obj.category || null; out.category_label = obj.category_label || null; } return out;"
+      }
+    }
+  ]
+}
