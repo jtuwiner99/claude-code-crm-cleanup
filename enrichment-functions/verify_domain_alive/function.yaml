@@ -1,0 +1,138 @@
+name: verify_domain_alive
+version: 1.1.0
+status: ported_from_clay
+description: >
+  Verify a domain is alive and belongs to a real business. Two-layer check:
+  (1) deterministic HTTP status check — does the URL load with a non-error
+  status code? — done free via generic_http_request, NOT a paid third-party
+  check service. The HTTP layer tries up to four URL variants in sequence
+  (https://<bare>, http://<bare>, https://www.<bare>, http://www.<bare>);
+  first success wins; subsequent variants only fire when the prior one
+  failed (cost-conscious — most domains succeed on variant 1).
+  (2) AI parking-page detector — for the URLs that loaded, is the page
+  actually a real business site, or a GoDaddy / registrar holding page /
+  blank lander? Composite output is a single `is_keepable` boolean the
+  calling pipeline uses to gate further enrichment. Designed to run early
+  in the pipeline (right after `normalize_domain_and_name`) so dead
+  domains don't burn provider/AI credits downstream.
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: http_timeout_ms
+    type: integer
+    required: false
+    default: 10000
+    description: HTTP timeout for the liveness ping.
+  - name: accepted_status_codes
+    type: array
+    items: integer
+    required: false
+    default: [200, 201, 202, 203, 204, 301, 302, 303, 307, 308]
+    description: >
+      HTTP status codes considered "live". Default is the standard 2xx +
+      common redirects. Customers with stricter requirements (e.g. only
+      treat 200 as live) should override at the recipe level.
+  - name: skip_ai_verification
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Skip the AI parking-page detection step. Use for cost-sensitive bulk
+      runs where the deterministic HTTP layer is sufficient. Default false.
+  - name: ai_verification_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for the AI parking-page detector. Defaults to gpt-5-mini —
+      the default cheap-AI model as of 2026-05-01. Higher-
+      stakes customers may upgrade. The deeplineagent tool catalog gates
+      the actual allowed values.
+
+outputs:
+  - name: is_live
+    type: boolean
+    description: True iff at least one of the four URL variants returned a status code in `accepted_status_codes`. All four variants must fail (or DNS / connection / timeout out) for `is_live` to be false.
+  - name: winning_variant
+    type: string
+    nullable: true
+    description: Which variant succeeded — one of `https_bare` | `http_bare` | `https_www` | `http_www`. Null if none succeeded. Useful for downstream URL building (e.g. always reuse the variant that's known to work).
+  - name: is_real_business
+    type: boolean
+    nullable: true
+    description: >
+      True iff the AI parking-page detector said "Real". False iff it said
+      "Not real". Null if `skip_ai_verification=true` or if the AI step
+      didn't run because `is_live=false`. Distinguish null from false at
+      the caller — null means "not checked", false means "explicitly flagged
+      as not a real business".
+  - name: is_keepable
+    type: boolean
+    description: >
+      The aggregate gate the caller uses to decide whether to proceed with
+      enrichment. `is_keepable = is_live && (skip_ai_verification === true
+      || is_real_business !== false)`. Note: AI failures are treated as
+      `is_real_business=null`, which means `is_keepable` defaults to
+      `is_live` — we do NOT remove a domain just because the AI step
+      glitched. False positives (keeping a parking page) are cheap;
+      false negatives (removing a legitimate customer) are expensive.
+  - name: http_status_code
+    type: integer
+    nullable: true
+    description: Actual status code returned by the HTTP check. Null on connection / DNS / timeout failure.
+  - name: final_url
+    type: string
+    nullable: true
+    description: URL after redirects. Useful for downstream reasoning and audit.
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: >
+      The AI's 1-2 sentence justification (e.g. "This is a domain
+      placeholder from GoDaddy with no business content"). Null when AI
+      step skipped or didn't run.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit trail: { http: {ran, status_code, final_url, error}, ai: {ran,
+      verdict, reasoning, error} }. Used for QA and downstream debugging.
+
+providers:
+  - name: generic_http_request
+    role: Deterministic HTTP liveness check. Replaces Clay's APIVoid `urlstatus/v1` paid call.
+  - name: deeplineagent
+    role: AI parking-page detector. Runs only on URLs that passed the HTTP check.
+
+ai_calls:
+  - tier: parking_page_detection
+    primitive: deeplineagent
+    model_tier: cheap (gpt-5-mini default — agency default per 2026-05-01)
+    estimated_tokens: 1500
+    runs_when: is_live === true && skip_ai_verification === false
+estimated_cost_usd: 0.002
+
+invariants:
+  - The HTTP check NEVER pays an external third party. It's `generic_http_request` to your own domain.
+  - If `is_live=false`, the AI step is skipped entirely — `is_real_business` and `ai_reasoning` are null.
+  - AI step failure (model call error, parse failure) emits `is_real_business=null`, NOT false. Caller must not treat null as "fail-closed".
+  - Default behavior on AI uncertainty is to KEEP the domain — false positives in the keep set are cheap, false negatives are expensive.
+
+clay_origin:
+  exported_at: 2026-05-01
+  port_notes: >
+    Clay table uses APIVoid `urlstatus/v1/pay-as-you-go/` (a paid third-party
+    URL-status service) and reads `data.report.analysis.{http_status_code,
+    url_taken_down, url_status, valid_server_ip, http_server_error,
+    http_client_error}`. Composite "Broken URL" formula:
+      url_taken_down || http_client_error === "true" || http_server_error
+      === "true" || valid_server_ip === "false" || url_status.includes("error")
+      || http_status_code === 0.
+    We replicate the deterministic part with a free `generic_http_request`
+    call and infer brokenness from the status code alone (4xx/5xx/0 = dead;
+    DNS / connection failure = dead). The "url_taken_down" deindexed-page
+    detection that APIVoid does internally is replaced by the AI parking-
+    page detector — which goes further, also catching GoDaddy-style
+    placeholders and blank landers that APIVoid would call "live".

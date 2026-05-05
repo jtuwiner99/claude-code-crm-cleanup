@@ -1,0 +1,61 @@
+// commands.jsonc — company_summary_from_website @ 1.0.0
+//
+// Ported from Clay table "Company Summary Variables"
+//   (ported from production Clay table)
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean         required
+//   row.input.company_name_clean   optional — context only
+//   row.input.record_id            optional — passthrough
+//
+// Output: composed at compose_output. The two sub-summaries (target audience,
+// products/services) are commented out by default — uncomment when needed.
+
+{
+  "commands": [
+    {
+      "alias": "summary",
+      "description": "Dense multi-paragraph company summary from the website. Faithful port of Clay's 'Company Summary' Claygent column.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "system": "You are a research analyst producing a company-grounding summary for downstream AI processing. Visit the company website to gather information. Produce a detailed, multi-paragraph summary covering all six points listed in the user prompt. Pull from the website primarily; supplement with public external sources if needed. If you are unable to produce a summary for any reason (dead domain, blocked site, etc.), return ONLY the literal string \"N/A\" and nothing else. Do not output JSON. Do not output markdown. Plain text paragraphs only.",
+        "prompt": "Visit the company website at \"{{row.input.domain_clean}}\" to gather information. Use these resources to create a detailed and comprehensive company summary covering the following points:\n- Company Overview: Describe the type of company they are (industry, size, and positioning).\n- Target Audience: Identify who the company helps (B2B, B2C, specific industries, or demographics).\n- Problems Addressed: Define the main problems or challenges the company aims to solve for its customers or clients.\n- Solutions Provided: Explain how the company solves these problems (through services, products, technology, or methodologies).\n- Products/Services: Provide an in-depth description of the company's products or services offered.\n- Unique Value Proposition: Highlight what sets this company apart from competitors, including any unique strategies, technologies, or innovations they use.\n\nEnsure the summary is in-depth and pulls from both the website and external sources to present a well-rounded overview.\n\nIf you're unable to create the company summary for any reason, output ONLY \"N/A\".\n\nOutput:\nA detailed, multi-paragraph company summary covering all six points listed above. DO NOT OUTPUT JSON."
+      }
+    },
+
+    // OPTIONAL — uncomment when a caller needs the dedicated sub-summaries.
+    // {
+    //   "alias": "target_audience_summary",
+    //   "operation": "deeplineagent",
+    //   "tool": "deeplineagent",
+    //   "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+    //   "payload": {
+    //     "system": "You are a salesperson generating a clear, concise description of a company's target audience. Visit the site at the provided domain and analyze content, messaging, and product/service pages. Return a single, well-written paragraph: who is the company selling to; B2C/B2B/B2B2C; relevant details (industry, buyer roles, customer size, demographics, use cases). Do not include URLs or navigation details — only the audience description.",
+    //     "prompt": "Domain: {{row.input.domain_clean}}"
+    //   }
+    // },
+
+    // {
+    //   "alias": "products_services_summary",
+    //   "operation": "deeplineagent",
+    //   "tool": "deeplineagent",
+    //   "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+    //   "payload": {
+    //     "system": "You are a salesperson generating a clear description of a company's primary products and services. Use only the website domain provided; analyze what can reasonably be inferred. Do not invent specific features, pricing, or claims. Return a single paragraph covering: core product(s)/service(s); whether software/physical/services/combination; primary value or problem the offering solves.",
+    //     "prompt": "Domain: {{row.input.domain_clean}}"
+    //   }
+    // },
+
+    {
+      "alias": "compose_output",
+      "description": "Emit the function's declared outputs.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const src = (row.input && typeof row.input === 'object') ? row.input : row; const summaryText = (row.summary && row.summary.result && (row.summary.result.text || row.summary.result.object)) || null; const summaryStr = typeof summaryText === 'string' ? summaryText : JSON.stringify(summaryText); return { summary: summaryStr || 'N/A', target_audience_summary: null, products_services_summary: null, record_id: (src && (src['record_id'] || src['Record ID'])) || null };"
+      }
+    }
+  ]
+}

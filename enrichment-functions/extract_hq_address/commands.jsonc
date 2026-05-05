@@ -1,0 +1,101 @@
+// commands.jsonc — extract_hq_address @ 1.0.0
+//
+// LinkedIn-primary + web-scrape-fallback HQ address extraction with
+// user-controlled formatting toggles for CRM writeback.
+//
+// Pipeline:
+//   1. extract_from_linkedin   — JS: parse address from cached PDL/Harvest payload
+//   2. assess_completeness     — JS: did we get street + city + country?
+//   3. web_scrape_fallback     — AI: scrape website only if step 1 was incomplete
+//   4. select_winning_address  — JS: pick LinkedIn (if complete) else web_scrape
+//   5. format_state_country    — JS: apply state_format + country_format toggles
+//   6. compose_output          — JS: emit declared outputs
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean                       required
+//   row.input.company_name_clean                 required
+//   row.input.linkedin_full_provider_payload     required
+//   row.input.state_format                       optional (default "abbreviation")
+//   row.input.country_format                     optional (default "iso_alpha_2")
+//   row.input.ai_model                           optional (default "openai/gpt-5-mini")
+
+{
+  "commands": [
+    {
+      "alias": "extract_from_linkedin",
+      "description": "Best-effort extraction from cached LinkedIn provider payload. PDL's enrich_company response typically lacks address fields, so this often returns mostly nulls; future Apify HarvestAPI integration would populate `headquarters` directly.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const p = (row.input && row.input.linkedin_full_provider_payload) || {}; let street = null, city = null, state = null, postal = null, country = null; const candidates = []; if (p.headquarters && typeof p.headquarters === 'object') candidates.push(p.headquarters); if (Array.isArray(p.locations)) candidates.push(...p.locations.filter(function(l){ return l && (l.is_headquarters === true || l.isHeadquarters === true || l.type === 'HEADQUARTERS' || l.type === 'headquarters'); })); if (Array.isArray(p.locations) && candidates.length === 0 && p.locations.length > 0) candidates.push(p.locations[0]); if (p.location && typeof p.location === 'object') candidates.push(p.location); for (const c of candidates) { if (!c) continue; street = street || c.street_address || c.streetAddress || c.line1 || c.address1 || c.street || null; city = city || c.locality || c.city || null; state = state || c.region || c.state || c.administrativeArea || null; postal = postal || c.postal_code || c.postalCode || c.zip || null; country = country || c.country || c.countryCode || c.country_code || null; if (street && city && country) break; } return { street: street || null, city: city || null, state: state || null, postal_code: postal || null, country: country || null, raw_candidates: candidates.length };"
+      }
+    },
+
+    {
+      "alias": "assess_completeness",
+      "description": "Decide whether LinkedIn-extracted address is complete enough. Threshold: must have at least street + city + country. State and postal can be null without triggering fallback (international addresses vary).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const li = row.extract_from_linkedin && row.extract_from_linkedin.result && row.extract_from_linkedin.result.data; const complete = !!(li && li.street && li.city && li.country); return { is_complete: complete, needs_fallback: !complete };"
+      }
+    },
+
+    {
+      "alias": "web_scrape_fallback",
+      "description": "AI agent web-scrapes the company's official website (about / contact / footer) for HQ address. Runs only when LinkedIn extraction was incomplete.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.assess_completeness && row.assess_completeness.result && row.assess_completeness.result.data && row.assess_completeness.result.data.needs_fallback === true)",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a research agent that finds a company's headquarters address from its official website. Visit the company's website (typically the /about, /contact, /imprint, /legal, or footer pages contain HQ address). Return the HEADQUARTERS only — if multiple offices are listed, identify the headquarters (often labeled 'Corporate', 'Global HQ', 'Main Office', listed first, or matching the company's primary domain country).\n\nReturn only valid JSON with these fields (any field may be null if you cannot find it):\n  street: <string> — full street line including suite/floor/unit if present\n  city: <string>\n  state: <string> — state, province, or administrative region. Use the full name (e.g. 'Maryland', 'California'). Downstream code will abbreviate as needed.\n  postal_code: <string>\n  country: <string> — full country name (e.g. 'United States', 'United Kingdom'). Downstream code will normalize to ISO codes as needed.\n  confidence: \"high\" | \"medium\" | \"low\" — high if multiple sources or a clearly-marked HQ field; medium if inferred from a single page mention; low if only partial info is available.\n  reasoning: <string> — 1-2 sentences on where you found it.\n\nIf the company has no public address (very small or solo founder), return all address fields null with reasoning explaining why. Do not invent addresses.",
+        "prompt": "Find the headquarters address for:\nCompany: \"{{row.input.company_name_clean}}\"\nWebsite: https://{{row.input.domain_clean}}\n\nReturn only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "street": { "type": ["string", "null"] },
+            "city": { "type": ["string", "null"] },
+            "state": { "type": ["string", "null"] },
+            "postal_code": { "type": ["string", "null"] },
+            "country": { "type": ["string", "null"] },
+            "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["confidence", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "select_winning_address",
+      "description": "Pick the address that came back first: LinkedIn if complete, else web_scrape. Track source + confidence.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const li = row.extract_from_linkedin && row.extract_from_linkedin.result && row.extract_from_linkedin.result.data; const liComplete = !!(li && li.street && li.city && li.country); const ws = row.web_scrape_fallback && row.web_scrape_fallback.result && row.web_scrape_fallback.result.object; if (liComplete) return { source: 'linkedin', confidence: 'high', street: li.street, city: li.city, state: li.state, postal_code: li.postal_code, country: li.country, reasoning: 'extracted from cached LinkedIn provider payload' }; if (ws && (ws.street || ws.city)) return { source: 'web_scrape', confidence: ws.confidence || 'medium', street: ws.street || null, city: ws.city || null, state: ws.state || null, postal_code: ws.postal_code || null, country: ws.country || null, reasoning: ws.reasoning || null }; return { source: 'none', confidence: 'low', street: null, city: null, state: null, postal_code: null, country: null, reasoning: 'no complete address found via LinkedIn or web scrape' };"
+      }
+    },
+
+    {
+      "alias": "format_state_country",
+      "description": "Apply the user-controlled formatting toggles. State: abbreviation (MD) vs full (Maryland). Country: ISO alpha-2 (US) vs full (United States).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const sel = row.select_winning_address && row.select_winning_address.result && row.select_winning_address.result.data; if (!sel) return { hq_street: null, hq_city: null, hq_state: null, hq_postal_code: null, hq_country: null }; const stateFormat = (row.input && row.input.state_format) || 'abbreviation'; const countryFormat = (row.input && row.input.country_format) || 'iso_alpha_2'; const usStates = { 'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','district of columbia':'DC' }; const caProvinces = { 'alberta':'AB','british columbia':'BC','manitoba':'MB','new brunswick':'NB','newfoundland and labrador':'NL','nova scotia':'NS','ontario':'ON','prince edward island':'PE','quebec':'QC','saskatchewan':'SK','northwest territories':'NT','nunavut':'NU','yukon':'YT' }; const usStatesInverse = Object.fromEntries(Object.entries(usStates).map(function(e){return [e[1], e[0].replace(/\\b\\w/g, function(c){return c.toUpperCase();})];})); const caInverse = Object.fromEntries(Object.entries(caProvinces).map(function(e){return [e[1], e[0].replace(/\\b\\w/g, function(c){return c.toUpperCase();})];})); function formatState(raw) { if (!raw) return null; const s = String(raw).trim(); const lower = s.toLowerCase(); if (stateFormat === 'abbreviation') { return usStates[lower] || caProvinces[lower] || (s.length <= 3 ? s.toUpperCase() : s); } else { return usStatesInverse[s.toUpperCase()] || caInverse[s.toUpperCase()] || s; } } const countryMap = { 'united states':'US','usa':'US','us':'US','united kingdom':'GB','uk':'GB','great britain':'GB','canada':'CA','australia':'AU','germany':'DE','france':'FR','spain':'ES','italy':'IT','netherlands':'NL','sweden':'SE','switzerland':'CH','austria':'AT','belgium':'BE','denmark':'DK','finland':'FI','norway':'NO','ireland':'IE','portugal':'PT','greece':'GR','poland':'PL','czech republic':'CZ','slovakia':'SK','hungary':'HU','romania':'RO','bulgaria':'BG','croatia':'HR','slovenia':'SI','lithuania':'LT','latvia':'LV','estonia':'EE','luxembourg':'LU','malta':'MT','ukraine':'UA','russia':'RU','turkey':'TR','israel':'IL','united arab emirates':'AE','uae':'AE','saudi arabia':'SA','egypt':'EG','south africa':'ZA','nigeria':'NG','kenya':'KE','morocco':'MA','japan':'JP','china':'CN','hong kong':'HK','taiwan':'TW','south korea':'KR','singapore':'SG','malaysia':'MY','indonesia':'ID','philippines':'PH','thailand':'TH','vietnam':'VN','india':'IN','pakistan':'PK','new zealand':'NZ','mexico':'MX','brazil':'BR','argentina':'AR','chile':'CL','colombia':'CO','peru':'PE','uruguay':'UY','ecuador':'EC','venezuela':'VE','iceland':'IS' }; const countryInverse = { 'US':'United States','GB':'United Kingdom','CA':'Canada','AU':'Australia','DE':'Germany','FR':'France','ES':'Spain','IT':'Italy','NL':'Netherlands','SE':'Sweden','CH':'Switzerland','AT':'Austria','BE':'Belgium','DK':'Denmark','FI':'Finland','NO':'Norway','IE':'Ireland','PT':'Portugal','GR':'Greece','PL':'Poland','CZ':'Czech Republic','SK':'Slovakia','HU':'Hungary','RO':'Romania','BG':'Bulgaria','HR':'Croatia','SI':'Slovenia','LT':'Lithuania','LV':'Latvia','EE':'Estonia','LU':'Luxembourg','MT':'Malta','UA':'Ukraine','RU':'Russia','TR':'Turkey','IL':'Israel','AE':'United Arab Emirates','SA':'Saudi Arabia','EG':'Egypt','ZA':'South Africa','NG':'Nigeria','KE':'Kenya','MA':'Morocco','JP':'Japan','CN':'China','HK':'Hong Kong','TW':'Taiwan','KR':'South Korea','SG':'Singapore','MY':'Malaysia','ID':'Indonesia','PH':'Philippines','TH':'Thailand','VN':'Vietnam','IN':'India','PK':'Pakistan','NZ':'New Zealand','MX':'Mexico','BR':'Brazil','AR':'Argentina','CL':'Chile','CO':'Colombia','PE':'Peru','UY':'Uruguay','EC':'Ecuador','VE':'Venezuela','IS':'Iceland' }; function formatCountry(raw) { if (!raw) return null; const s = String(raw).trim(); if (countryFormat === 'iso_alpha_2') { if (s.length === 2) return s.toUpperCase(); return countryMap[s.toLowerCase()] || s; } else { if (s.length === 2) return countryInverse[s.toUpperCase()] || s; return s; } } return { hq_street: sel.street || null, hq_city: sel.city || null, hq_state: formatState(sel.state), hq_postal_code: sel.postal_code || null, hq_country: formatCountry(sel.country) };"
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Concatenate the formatted address into a single CRM-writable string + emit declared outputs with full audit signals.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const fmt = row.format_state_country && row.format_state_country.result && row.format_state_country.result.data; const sel = row.select_winning_address && row.select_winning_address.result && row.select_winning_address.result.data; const li = row.extract_from_linkedin && row.extract_from_linkedin.result && row.extract_from_linkedin.result.data; const wsRan = !!(row.web_scrape_fallback); const ws = row.web_scrape_fallback && row.web_scrape_fallback.result && row.web_scrape_fallback.result.object; const parts = []; if (fmt && fmt.hq_street) parts.push(fmt.hq_street); const cityState = []; if (fmt && fmt.hq_city) cityState.push(fmt.hq_city); if (fmt && fmt.hq_state) cityState.push(fmt.hq_state); if (cityState.length) parts.push(cityState.join(', ')); if (fmt && fmt.hq_postal_code) parts[parts.length - 1] = parts[parts.length - 1] + ' ' + fmt.hq_postal_code; if (fmt && fmt.hq_country) parts.push(fmt.hq_country); const fullAddr = parts.length ? parts.join(', ') : null; return { hq_street: fmt ? fmt.hq_street : null, hq_city: fmt ? fmt.hq_city : null, hq_state: fmt ? fmt.hq_state : null, hq_postal_code: fmt ? fmt.hq_postal_code : null, hq_country: fmt ? fmt.hq_country : null, hq_full_address: fullAddr, address_source: sel ? sel.source : 'none', address_confidence: sel ? sel.confidence : 'low', verification_signals: { linkedin: { ran: !!li, found: !!(li && li.street && li.city), raw: li || null }, web_scrape: { ran: wsRan, found: !!(ws && (ws.street || ws.city)), reasoning: ws ? ws.reasoning : null }, formatting: { state_format: (row.input && row.input.state_format) || 'abbreviation', country_format: (row.input && row.input.country_format) || 'iso_alpha_2' } } };"
+      }
+    }
+  ]
+}

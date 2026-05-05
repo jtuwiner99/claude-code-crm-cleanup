@@ -1,0 +1,79 @@
+name: company_summary_from_website
+version: 1.0.0
+status: ported_from_clay
+description: >
+  Visit a company's website and produce a dense, multi-paragraph summary
+  covering: company overview, target audience, problems addressed, solutions
+  provided, products/services, and unique value proposition. Used as
+  grounding for downstream LinkedIn fuzzy-match verification and any AI step
+  that needs "what does this company actually do".
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: false
+    description: Optional context for the AI agent; improves summary quality on ambiguous domains.
+  - name: record_id
+    type: string
+    required: false
+    description: Optional caller-provided primary key. Passed through unchanged.
+
+outputs:
+  - name: summary
+    type: string
+    description: >
+      Multi-paragraph dense summary covering all six required points.
+      Written for downstream AI consumption (e.g. fuzzy-match verification),
+      not for human reading. Returns the literal string "N/A" if the agent
+      cannot generate a summary (e.g. dead domain, blocked site).
+  - name: target_audience_summary
+    type: string
+    nullable: true
+    description: >
+      Optional sub-summary specifically about who the company sells to.
+      Useful when downstream logic needs ICP-style data without re-summarizing.
+  - name: products_services_summary
+    type: string
+    nullable: true
+    description: >
+      Optional sub-summary about the company's core products/services.
+  - name: record_id
+    type: string
+    nullable: true
+
+providers: []
+ai_calls:
+  - tier: main_summary
+    primitive: deeplineagent
+    model_tier: cheap (Claygent-equivalent — web research)
+    estimated_tokens: 4000
+  - tier: target_audience_summary
+    primitive: deeplineagent
+    model_tier: cheap
+    estimated_tokens: 1500
+    runs_when: caller wants the sub-summaries (default: skipped)
+  - tier: products_services_summary
+    primitive: deeplineagent
+    model_tier: cheap
+    estimated_tokens: 1500
+    runs_when: caller wants the sub-summaries (default: skipped)
+estimated_cost_usd: 0.005
+
+invariants:
+  - `summary` is always populated (either real content or the literal "N/A").
+  - The two sub-summaries are skipped by default; emit nullable.
+  - The function makes no deterministic claims about output quality — downstream consumers must treat `summary` as AI-generated text, not authoritative truth.
+
+clay_origin:
+  exported_at: 2026-05-01
+  port_notes: >
+    Clay's `claygent` useCase maps cleanly to Deepline's `deeplineagent`
+    default-model invocation — both are AI agents with web-search + bash
+    tooling. Sub-summaries (`Target Audience Description`, `Product/Service
+    Summary`) are preserved as optional outputs in the contract but are not
+    invoked in the default commands.jsonc — uncomment them in the playbook
+    when a downstream caller actually needs them.

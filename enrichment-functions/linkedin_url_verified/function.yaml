@@ -1,0 +1,150 @@
+name: linkedin_url_verified
+version: 1.1.0
+status: ported_from_clay
+description: >
+  Find a company's LinkedIn URL from its domain and confirm the URL actually
+  belongs to that company. Two-tier strategy: (1) cheap provider lookup
+  (Lusha) by domain → AI fuzzy-match verification using a strict
+  matching-engine system prompt; (2) if tier 1 fails, AI web-research to
+  re-discover the URL from (domain + name + summary), re-run a provider
+  lookup (PDL, since Lusha doesn't accept linkedin_url as input) with the
+  new URL, and re-verify. Emits a verified URL plus the firmographics that
+  came back with it (employee size band, industry, name, description,
+  website). Tier 1 normalizes Lusha's response shape into a common
+  output schema so downstream consumers don't need to know which provider
+  served the row.
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: false
+    description: Normalized company name (output of `normalize_domain_and_name`). Optional but improves verification accuracy.
+  - name: company_summary
+    type: string
+    required: true
+    description: >
+      Pre-generated dense company summary from `company_summary_from_website`.
+      Required for the AI fuzzy-match verification tier. Caller is
+      responsible for generating this upstream — typically `summary` will
+      have run already in any pipeline that uses this function.
+
+outputs:
+  - name: linkedin_url
+    type: string
+    nullable: true
+    description: Verified LinkedIn company URL, or null if both tiers failed.
+  - name: verified
+    type: boolean
+    description: "True iff at least one tier's AI fuzzy-match returned `is_match: true`."
+  - name: verification_tier
+    type: string
+    description: One of `tier_1_provider_match` | `tier_2_web_research_match` | `unverified`.
+  - name: employee_size_band
+    type: string
+    nullable: true
+    description: PDL's `size` field — e.g. `1-10` | `11-50` | `51-200` | `201-500` | `501-1000` | `1001-5000` | `5001-10000` | `10001+`. Comes from whichever tier verified.
+  - name: company_name_provider
+    type: string
+    nullable: true
+    description: Provider's reported company name (NOT the normalized one — useful for audit comparison).
+  - name: industry
+    type: string
+    nullable: true
+  - name: description_provider
+    type: string
+    nullable: true
+    description: Provider's company description. Distinct from `company_summary` (which came from the website agent).
+  - name: website_provider
+    type: string
+    nullable: true
+    description: Provider's reported website. Useful for cross-checking domain consistency.
+  - name: founded_year
+    type: integer
+    nullable: true
+  - name: full_provider_payload
+    type: object
+    nullable: true
+    description: >
+      Full provider response from the verifying tier. Cached on output so
+      downstream consumers (e.g. a future `company_core_from_linkedin` that
+      runs Harvest for richer firmographics) can reference the same data
+      without re-spending a credit.
+  - name: verification_signals
+    type: object
+    description: >
+      `{ tier_1: { ran, is_match, reasoning }, tier_2: { ran, is_match,
+      reasoning, web_research_url } }` — full audit trail.
+
+providers:
+  - name: lusha_enrich_company
+    role: tier-1 domain → linkedin_url + firmographics
+    note: >
+      Tier-1 provider as of v1.1.0. Replaces PDL after empirical 30-domain
+      bench (tmp/linkedin-waterfall-test/, 2026-05-04)
+      showed Lusha matches PDL's 90% hit rate at ~20x lower cost
+      (~$0.0045/hit vs ~$0.10/hit). Lusha and PDL miss the same tail
+      domains (parked / defunct / typo'd), so a Lusha→PDL cascade caught
+      zero additional rows in the bench — no point paying PDL on the 10%
+      Lusha misses. Response shape differs from PDL: linkedin_url lives at
+      `result.data.social.linkedin.url` (with `https://www.` prefix), website
+      lives at `result.data.domain` (bare), industry at `result.data.mainIndustry`,
+      size band at `result.data.employees` (e.g. `"10001 - 100000"`),
+      founded at `result.data.founded` (string year). The compose_output
+      step normalizes these into the common output schema.
+  - name: peopledatalabs_enrich_company
+    role: tier-2 linkedin_url → firmographics re-lookup
+    note: >
+      Reserved for tier 2 (re-enrich the URL the AI web-research returned).
+      Lusha doesn't accept linkedin_url as input, only domain — so the
+      tier-2 re-lookup stays on PDL. Tier 2 fires on ~10% of rows so the
+      cost impact is small.
+  - name: deeplineagent
+    role: AI fuzzy-match verification (gpt-5-mini, agency default) AND web-research fallback (default deeplineagent model).
+
+ai_calls:
+  - tier: 1_verification
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 1500
+    runs_when: always (after tier-1 Lusha lookup succeeds)
+  - tier: 2_web_research
+    primitive: deeplineagent
+    model: default (currently openai/gpt-5.4-mini, with web-search tools)
+    estimated_tokens: 3000
+    runs_when: tier_1.is_match === false
+  - tier: 2_verification
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 1500
+    runs_when: tier_2 produced a candidate URL
+estimated_cost_usd: 0.005  # tier 1 (Lusha ~$0.0045 + AI verify ~$0.0008) always; tier 2 only on miss. Was 0.008 with PDL tier 1.
+
+invariants:
+  - If verified=true, linkedin_url is non-null.
+  - If verified=false, linkedin_url MAY be populated (best guess) but caller MUST NOT trust it.
+  - verification_tier `unverified` is the only outcome compatible with verified=false.
+  - full_provider_payload reflects whichever tier verified. If verified=false, payload is from tier 1 (or null if tier 1 itself failed to find any URL).
+
+clay_origin:
+  exported_at: 2026-05-01
+  port_notes: >
+    Clay table has no deterministic website-match tier — verification is
+    AI-only. Earlier scaffold had a deterministic tier 1; removed to match
+    Clay logic. The matching-engine system prompt is preserved verbatim
+    (high-precision, opinionated rules for subdomain matching, brand-family
+    detection, name similarity thresholds). Output shape adds the
+    firmographics that come for free with the provider call (employee size
+    band, industry, description) since the same data was being thrown away
+    in Clay's downstream chain.
+    Model bumped from gpt-4o-mini (Clay's choice, baseline before gpt-5-mini
+    existed) to gpt-5-mini (default as of 2026-05-01).
+    v1.1.0 (2026-05-04): tier-1 provider swapped from PDL → Lusha after
+    empirical 30-domain bench in tmp/linkedin-waterfall-test/
+    showed identical 90% hit rate at ~20x lower cost. PDL retained for
+    tier-2 re-lookup (Lusha doesn't accept linkedin_url as input). Compose
+    step now normalizes provider response shapes into a uniform output
+    schema so callers don't need to branch on which tier served the row.

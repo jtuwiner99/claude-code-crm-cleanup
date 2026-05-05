@@ -1,0 +1,74 @@
+name: company_core_from_linkedin
+version: 1.0.0
+status: planned_future_extension
+description: >
+  Given a verified LinkedIn company URL (and optionally the cached payload
+  from the verification step), return richer LinkedIn-direct firmographics
+  via the Harvest API: integer employee count (not just a band), HQ address,
+  founded year, specialties, full description. Goes deeper than
+  `linkedin_url_verified`'s baseline outputs — meant for downstream
+  qualification gates that need precise numeric employee count or country-
+  level HQ data.
+
+  STATUS: Not yet ported from Clay (Clay's table doesn't have a Harvest
+  step — it relies on MixRank's data). This is a forward-looking extension
+  matching what the existing production `account_enrichment`
+  hosted workflow already does (Apollo+HarvestAPI two-step). Implement
+  when the first client recipe actually needs richer firmographics than
+  PDL's `size` band.
+
+inputs:
+  - name: linkedin_url
+    type: string
+    required: true
+    description: Verified LinkedIn company URL (output of `linkedin_url_verified`).
+  - name: harvest_payload_cached
+    type: object
+    required: false
+    description: >
+      Pre-fetched Harvest API payload from a prior step (typically
+      `linkedin_url_verified.harvest_payload`). When supplied, this function
+      skips its own Harvest call. Saves one credit per row.
+
+outputs:
+  - name: employee_count
+    type: integer
+    nullable: true
+  - name: headquarters
+    type: object
+    description: { street, city, state, postal_code, country }
+  - name: industry
+    type: string
+    nullable: true
+  - name: founded_year
+    type: integer
+    nullable: true
+  - name: website
+    type: string
+    nullable: true
+  - name: description
+    type: string
+    nullable: true
+  - name: specialties
+    type: array
+    items: string
+  - name: company_size_band
+    type: string
+    description: One of `1-10` | `11-50` | `51-200` | `201-500` | `501-1000` | `1001-5000` | `5001-10000` | `10001+`.
+  - name: linkedin_payload
+    type: object
+    description: Raw Harvest payload, preserved for downstream consumers.
+
+providers:
+  - name: harvest_api
+    role: LinkedIn-direct firmographics fetch.
+    runs_when: harvest_payload_cached is not provided
+
+ai_calls: []
+estimated_cost_usd: 0.002  # one Harvest credit; zero when cached payload supplied
+
+invariants:
+  - If `harvest_payload_cached` is provided, no external API call is made.
+  - `headquarters` is always an object (possibly with null fields), never null itself.
+  - `company_size_band` is derived from `employee_count` deterministically; if employee_count is null, band is null.
+  - `linkedin_payload` is always populated (either passed-through cache or freshly fetched).

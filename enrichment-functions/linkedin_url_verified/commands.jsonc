@@ -1,0 +1,124 @@
+// commands.jsonc — linkedin_url_verified @ 1.1.0
+//
+// Ported from Clay table "Enrich Company LinkedIn"
+//   (ported from production Clay table)
+//
+// Tier 1 provider: swapped PDL → Lusha on 2026-05-04 after empirical 30-domain
+// bench (tmp/linkedin-waterfall-test/) showed Lusha matches
+// PDL's 90% hit rate at ~20x lower cost ($0.0045/hit vs $0.10/hit). Lusha and
+// PDL miss the SAME tail domains, so a Lusha→PDL cascade caught zero
+// additional rows — PDL is reserved for tier 2 (linkedin_url re-lookup) only.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean          required
+//   row.input.company_name_clean    optional
+//   row.input.company_summary       required (from company_summary_from_website)
+//
+// Two-tier verification flow:
+//   1. tier_1_provider_lookup     — Lusha enrich by domain
+//   2. tier_1_verify              — AI fuzzy-match (gpt-5-mini, agency default)
+//   3. tier_2_web_research        — only if tier_1 missed; AI agent finds URL
+//   4. tier_2_provider_lookup     — only if web research returned a URL; PDL by linkedin_url
+//   5. tier_2_verify              — AI fuzzy-match on tier_2 payload
+//   6. compose_output             — pick whichever tier verified; normalize provider shapes
+
+{
+  "commands": [
+    {
+      "alias": "tier_1_provider_lookup",
+      "description": "Cheap domain → linkedin_url + firmographics. Lusha at ~$0.0045/hit; 90% hit rate on B2B SaaS bench (2026-05-04).",
+      "operation": "lusha_enrich_company",
+      "tool": "lusha_enrich_company",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "domain": "{{row.input.domain_clean}}"
+      }
+    },
+
+    {
+      "alias": "tier_1_verify",
+      "description": "AI fuzzy-match: is the LinkedIn entity returned by tier_1 the same company as the input? gpt-5-mini (agency default), faithful port of Clay's 'Confirm LinkedIn' system prompt.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.tier_1_provider_lookup && row.tier_1_provider_lookup.result && row.tier_1_provider_lookup.result.data && row.tier_1_provider_lookup.result.data.social && row.tier_1_provider_lookup.result.data.social.linkedin && row.tier_1_provider_lookup.result.data.social.linkedin.url)",
+      "payload": {
+        "model": "openai/gpt-5-mini",
+        "system": "ROLE:\nYou are a company-identity matching engine. Your job is to determine whether a LinkedIn company profile corresponds to the same company as an input company domain.\nGOAL:\nGiven a LinkedIn company profile and an input company record from a CRM, determine with high precision whether they represent the same real-world company.\nReturn true only when the LinkedIn company is very likely the same entity as the input company. Return false when the match is weak, ambiguous, contradicted by domain evidence, or likely a different company with a similar name.\nINPUT FORMAT:\n{\n  \"linkedin_company_name\": \"<string or null>\",\n  \"linkedin_company_domain\": \"<string or null>\",\n  \"linkedin_company_description\": \"<string or null>\",\n  \"input_company_domain\": \"<string>\",\n  \"input_company_name\": \"<string or null>\",\n  \"input_company_summary\": \"<string or null>\"\n}\nMATCHING LOGIC:\n1. Normalize domains\n- Lowercase domains.\n- Remove protocol, www, trailing slashes, paths, UTM parameters, and query strings.\n- Compare root domains where appropriate.\n- Treat subdomains as matching the same company when the root domain matches.\n  - Example: jobs.stripe.com vs stripe.com = true\n  - Example: app.company.com vs company.com = true\n2. Primary domain match rule\n- If linkedin_company_domain exactly matches input_company_domain, return true.\n- If one domain is a subdomain of the other, return true.\n- If the LinkedIn domain contains the input root domain in a valid subdomain/root-domain way, return true.\n- Do not treat simple string containment as enough if it creates a different root domain.\n  - stripe.com and stripe-payments-example.com are not automatically a match.\n3. Different domain rule\n- If the LinkedIn domain and input domain have clearly different root domains, default to false.\n- Only override this if there is very strong evidence that they are the same entity, such as:\n  - same unique brand name,\n  - highly aligned company descriptions,\n  - same product/category,\n  - same geography/market,\n  - one domain appears to be a regional, local, or alternate brand domain for the same company.\n- If domains differ and the summaries/descriptions describe meaningfully different businesses, return false.\n4. Brand family / regional domain rule\nAllow true when domains differ but clearly represent the same brand family or regional subsidiary.\nExamples:\n- accenture.com vs accenture.de = true\n- company.com vs company.co.uk = true when name and descriptions align\n- brand.com vs brandglobal.com may be true only if summaries strongly align\n5. Name matching rule\nUse this when domains are missing, inconclusive, or potentially alternate domains.\nNormalize company names by:\n- Lowercasing\n- Removing punctuation\n- Removing legal suffixes like Inc, LLC, Ltd, Limited, Corp, Corporation, GmbH, SA, AG, PLC\n- Removing generic words only when they do not carry brand meaning\nEvaluate:\n- If names are nearly identical or have similarity >= 0.90, treat as strong evidence.\n- If similarity is 0.75-0.89, return true only if they share a distinctive root brand string and the summaries/descriptions align.\n- If similarity < 0.75, return false unless domain match is exact or subdomain-based.\n6. Summary / description comparison\nUse the linkedin_company_description and input_company_summary to validate whether the companies do the same thing. Compare industry, product/service offering, customer type, geography, business model, brand language, named products. Strong alignment supports a match when domains are missing/alternate. Strong mismatch should cause false, especially when domains differ.\n7. Conflict rule\nReturn false when evidence suggests two different companies, even if names are similar (Corsair Capital vs Corsair Memory = false; same generic name but different industry/domain = false).\n8. Missing LinkedIn domain\nIf linkedin_company_domain is null, do not automatically return false. Use name similarity and summary/description alignment. Return true only if name match is strong and business descriptions are aligned. When uncertain, return false.\n9. Safety rule\nWhen in doubt, return false.\nDECISION PRIORITY:\n1. Exact/root/subdomain domain match = true\n2. Clear different root domains = usually false\n3. Strong brand-family/regional domain + aligned summaries = true\n4. Missing domain + strong name match + aligned summaries = true\n5. Ambiguous, weak, generic, or conflicting evidence = false\nFINAL INSTRUCTION:\nReturn only valid JSON. No markdown. No commentary. No extra text.",
+        "prompt": "{\n  \"linkedin_company_name\": \"{{tier_1_provider_lookup.result.data.name}}\",\n  \"linkedin_company_domain\": \"{{tier_1_provider_lookup.result.data.domain}}\",\n  \"linkedin_company_description\": \"{{tier_1_provider_lookup.result.data.description}}\",\n  \"input_company_domain\": \"{{row.input.domain_clean}}\",\n  \"input_company_name\": \"{{row.input.company_name_clean}}\",\n  \"input_company_summary\": \"{{row.input.company_summary}}\"\n}",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "is_match": { "type": "boolean" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["is_match", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "tier_2_web_research",
+      "description": "Only if tier_1_verify said no match. AI agent does web research to find the LinkedIn URL from (name + domain + summary).",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.tier_1_verify && row.tier_1_verify.result && row.tier_1_verify.result.object && row.tier_1_verify.result.object.is_match === false)",
+      "payload": {
+        "system": "You are a research agent that finds the canonical LinkedIn company page for a given company. Use web search. The company page URL must contain 'linkedin.com/company/' to count. If you find a high-confidence URL, return it. If you cannot find one, return null.",
+        "prompt": "Find the LinkedIn company URL for this company.\n\nCompany name: {{row.input.company_name_clean}}\nCompany domain: {{row.input.domain_clean}}\n\nFor context, here is a website-derived summary of what they do:\n{{row.input.company_summary}}\n\nSearch for: \"{{row.input.company_name_clean}} {{row.input.domain_clean}} company linkedin profile\". Their LinkedIn page URL must contain 'linkedin.com/company/'. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "linkedin_url": { "type": ["string", "null"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["linkedin_url"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "tier_2_provider_lookup",
+      "description": "Only if tier_2_web_research returned a URL. Re-run PDL using the new URL.",
+      "operation": "peopledatalabs_enrich_company",
+      "tool": "peopledatalabs_enrich_company",
+      "run_if_js": "Boolean(row.tier_2_web_research && row.tier_2_web_research.result && row.tier_2_web_research.result.object && typeof row.tier_2_web_research.result.object.linkedin_url === 'string' && row.tier_2_web_research.result.object.linkedin_url.toLowerCase().indexOf('linkedin.com/company/') !== -1)",
+      "payload": {
+        "linkedin_url": "{{tier_2_web_research.result.object.linkedin_url}}"
+      }
+    },
+
+    {
+      "alias": "tier_2_verify",
+      "description": "Same matching-engine system prompt; runs against the tier_2 PDL payload.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.tier_2_provider_lookup && row.tier_2_provider_lookup.result && row.tier_2_provider_lookup.result.data && row.tier_2_provider_lookup.result.data.linkedin_url)",
+      "payload": {
+        "model": "openai/gpt-5-mini",
+        "system": "ROLE:\nYou are a company-identity matching engine. Same rules as tier 1 — return JSON {is_match, reasoning} based on the input/LinkedIn comparison. (System prompt body is identical to tier_1_verify.)",
+        "prompt": "{\n  \"linkedin_company_name\": \"{{tier_2_provider_lookup.result.data.name}}\",\n  \"linkedin_company_domain\": \"{{tier_2_provider_lookup.result.data.website}}\",\n  \"linkedin_company_description\": \"{{tier_2_provider_lookup.result.data.description}}\",\n  \"input_company_domain\": \"{{row.input.domain_clean}}\",\n  \"input_company_name\": \"{{row.input.company_name_clean}}\",\n  \"input_company_summary\": \"{{row.input.company_summary}}\"\n}",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "is_match": { "type": "boolean" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["is_match", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Pick whichever tier verified; emit declared outputs.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const t1 = row.tier_1_verify && row.tier_1_verify.result && row.tier_1_verify.result.object; const t2 = row.tier_2_verify && row.tier_2_verify.result && row.tier_2_verify.result.object; const t1Match = !!(t1 && t1.is_match === true); const t2Match = !!(t2 && t2.is_match === true); const t1Raw = (row.tier_1_provider_lookup && row.tier_1_provider_lookup.result && row.tier_1_provider_lookup.result.data) || null; const t2Raw = (row.tier_2_provider_lookup && row.tier_2_provider_lookup.result && row.tier_2_provider_lookup.result.data) || null; const stripUrlPrefix = function(u) { if (!u) return null; let s = String(u); const l = s.toLowerCase(); if (l.startsWith('https://')) s = s.slice(8); else if (l.startsWith('http://')) s = s.slice(7); if (s.toLowerCase().startsWith('www.')) s = s.slice(4); if (s.endsWith('/')) s = s.slice(0, -1); return s; }; const normLusha = function(d) { if (!d) return null; return { linkedin_url: stripUrlPrefix((d.social && d.social.linkedin && d.social.linkedin.url) || null), name: d.name || null, website: d.domain || null, description: d.description || null, size: d.employees || null, industry: d.mainIndustry || d.industry || null, founded: d.founded ? (parseInt(d.founded, 10) || null) : null }; }; const normPdl = function(d) { if (!d) return null; return { linkedin_url: stripUrlPrefix(d.linkedin_url || null), name: d.name || null, website: d.website || null, description: d.description || null, size: d.size || null, industry: d.industry || null, founded: d.founded || null }; }; const t1Norm = normLusha(t1Raw); const t2Norm = normPdl(t2Raw); const tier = t1Match ? 'tier_1_provider_match' : (t2Match ? 'tier_2_web_research_match' : 'unverified'); const verified = t1Match || t2Match; const winning = t1Match ? t1Norm : (t2Match ? t2Norm : t1Norm); const winningRaw = t1Match ? t1Raw : (t2Match ? t2Raw : t1Raw); const linkedin_url = verified ? (winning && winning.linkedin_url) : null; const t2WebResearchUrl = (row.tier_2_web_research && row.tier_2_web_research.result && row.tier_2_web_research.result.object && row.tier_2_web_research.result.object.linkedin_url) || null; return { linkedin_url: linkedin_url, verified: verified, verification_tier: tier, employee_size_band: winning ? (winning.size || null) : null, company_name_provider: winning ? (winning.name || null) : null, industry: winning ? (winning.industry || null) : null, description_provider: winning ? (winning.description || null) : null, website_provider: winning ? (winning.website || null) : null, founded_year: winning ? (winning.founded || null) : null, full_provider_payload: winningRaw, verification_signals: { tier_1: { ran: !!row.tier_1_verify, is_match: t1Match, reasoning: t1 ? t1.reasoning : null }, tier_2: { ran: !!row.tier_2_verify, is_match: t2Match, reasoning: t2 ? t2.reasoning : null, web_research_url: t2WebResearchUrl } } };"
+      }
+    }
+  ]
+}

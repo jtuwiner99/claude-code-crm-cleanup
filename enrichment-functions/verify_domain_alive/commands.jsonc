@@ -1,0 +1,133 @@
+// commands.jsonc — verify_domain_alive @ 1.1.0
+//
+// Ported from Clay table "CW - Website Cleanup (0-50k)"
+//   (ported from production Clay table).
+// Clay's deterministic layer paid APIVoid; we replicate it free with
+// generic_http_request. Clay's deindexed-page detection becomes a cheap
+// AI parking-page detector running only on the HTTP survivors.
+//
+// 1.1.0: try four URL variants (https/http × bare/www) in sequence; first
+// success wins. Default cheap-AI model bumped from gpt-4o-mini to gpt-5-mini.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean             required
+//   row.input.http_timeout_ms          optional (default 10000)
+//   row.input.accepted_status_codes    optional array (default [200..308])
+//   row.input.skip_ai_verification     optional bool (default false)
+//   row.input.ai_verification_model    optional (default "openai/gpt-5-mini")
+
+{
+  "commands": [
+    {
+      "alias": "build_request_config",
+      "description": "Compose the four URL variants and resolve defaults. Variants tried in order: https://<bare>, http://<bare>, https://www.<bare>, http://www.<bare>. First success wins.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; const d = i.domain_clean || row['domain_clean'] || null; if (!d || typeof d !== 'string' || !d.trim()) throw new Error('domain_clean is required'); const bare = d.replace(/^https?:\\/\\//,'').replace(/^www\\./,'').split('/')[0].split('?')[0].toLowerCase().trim(); const variants = ['https://' + bare, 'http://' + bare, 'https://www.' + bare, 'http://www.' + bare]; const accepted = Array.isArray(i.accepted_status_codes) ? i.accepted_status_codes : [200,201,202,203,204,301,302,303,307,308]; return { bare: bare, variants: variants, variant_https_bare: variants[0], variant_http_bare: variants[1], variant_https_www: variants[2], variant_http_www: variants[3], timeout_ms: i.http_timeout_ms || 10000, accepted_status_codes: accepted, skip_ai_verification: i.skip_ai_verification === true, ai_model: i.ai_verification_model || 'openai/gpt-5-mini' };"
+      }
+    },
+
+    {
+      "alias": "http_check_v1",
+      "description": "Variant 1: https://<bare>. Most common success case.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "Boolean(row.build_request_config && row.build_request_config.result && row.build_request_config.result.data && row.build_request_config.result.data.variant_https_bare)",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request_config.result.data.variant_https_bare}}",
+        "headers": { "User-Agent": "ClaudeCodeCRMCleanup/1.0 (+https://github.com/jtuwiner99/claude-code-crm-cleanup)" },
+        "timeout_ms": "{{build_request_config.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const status = (r && (r.status_code || r.statusCode || r.status)) || null; const finalUrl = (r && (r.final_url || r.url || r.finalUrl)) || null; const error = (r && (r.error || r.error_message || r.errorMessage)) || null; return { status_code: typeof status === 'number' ? status : (status ? Number(status) : null), final_url: finalUrl, error: error }; }"
+    },
+
+    {
+      "alias": "http_check_v2",
+      "description": "Variant 2: http://<bare>. Runs only if v1 didn't succeed.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "(function(){ const cfg = row.build_request_config && row.build_request_config.result && row.build_request_config.result.data; const v1 = row.http_check_v1 && row.http_check_v1.result && row.http_check_v1.result.data; const accepted = (cfg && cfg.accepted_status_codes) || []; return !(v1 && v1.status_code && accepted.indexOf(v1.status_code) !== -1); })()",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request_config.result.data.variant_http_bare}}",
+        "headers": { "User-Agent": "ClaudeCodeCRMCleanup/1.0 (+https://github.com/jtuwiner99/claude-code-crm-cleanup)" },
+        "timeout_ms": "{{build_request_config.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const status = (r && (r.status_code || r.statusCode || r.status)) || null; const finalUrl = (r && (r.final_url || r.url || r.finalUrl)) || null; const error = (r && (r.error || r.error_message || r.errorMessage)) || null; return { status_code: typeof status === 'number' ? status : (status ? Number(status) : null), final_url: finalUrl, error: error }; }"
+    },
+
+    {
+      "alias": "http_check_v3",
+      "description": "Variant 3: https://www.<bare>. Runs only if v1 and v2 didn't succeed.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "(function(){ const cfg = row.build_request_config && row.build_request_config.result && row.build_request_config.result.data; const accepted = (cfg && cfg.accepted_status_codes) || []; const v1 = row.http_check_v1 && row.http_check_v1.result && row.http_check_v1.result.data; const v2 = row.http_check_v2 && row.http_check_v2.result && row.http_check_v2.result.data; const v1ok = !!(v1 && v1.status_code && accepted.indexOf(v1.status_code) !== -1); const v2ok = !!(v2 && v2.status_code && accepted.indexOf(v2.status_code) !== -1); return !v1ok && !v2ok; })()",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request_config.result.data.variant_https_www}}",
+        "headers": { "User-Agent": "ClaudeCodeCRMCleanup/1.0 (+https://github.com/jtuwiner99/claude-code-crm-cleanup)" },
+        "timeout_ms": "{{build_request_config.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const status = (r && (r.status_code || r.statusCode || r.status)) || null; const finalUrl = (r && (r.final_url || r.url || r.finalUrl)) || null; const error = (r && (r.error || r.error_message || r.errorMessage)) || null; return { status_code: typeof status === 'number' ? status : (status ? Number(status) : null), final_url: finalUrl, error: error }; }"
+    },
+
+    {
+      "alias": "http_check_v4",
+      "description": "Variant 4: http://www.<bare>. Runs only if v1, v2, and v3 all didn't succeed. Final fallback.",
+      "operation": "generic_http_request",
+      "tool": "generic_http_request",
+      "run_if_js": "(function(){ const cfg = row.build_request_config && row.build_request_config.result && row.build_request_config.result.data; const accepted = (cfg && cfg.accepted_status_codes) || []; const v1 = row.http_check_v1 && row.http_check_v1.result && row.http_check_v1.result.data; const v2 = row.http_check_v2 && row.http_check_v2.result && row.http_check_v2.result.data; const v3 = row.http_check_v3 && row.http_check_v3.result && row.http_check_v3.result.data; const ok = function(v){ return !!(v && v.status_code && accepted.indexOf(v.status_code) !== -1); }; return !ok(v1) && !ok(v2) && !ok(v3); })()",
+      "payload": {
+        "method": "GET",
+        "url": "{{build_request_config.result.data.variant_http_www}}",
+        "headers": { "User-Agent": "ClaudeCodeCRMCleanup/1.0 (+https://github.com/jtuwiner99/claude-code-crm-cleanup)" },
+        "timeout_ms": "{{build_request_config.result.data.timeout_ms}}"
+      },
+      "extract_js": "(output_data) => { const r = (output_data && output_data.result) || output_data || {}; const status = (r && (r.status_code || r.statusCode || r.status)) || null; const finalUrl = (r && (r.final_url || r.url || r.finalUrl)) || null; const error = (r && (r.error || r.error_message || r.errorMessage)) || null; return { status_code: typeof status === 'number' ? status : (status ? Number(status) : null), final_url: finalUrl, error: error }; }"
+    },
+
+    {
+      "alias": "pick_winning_url",
+      "description": "Walk through the four variants in order; return the first one whose status code is in the accepted set. If none succeeded, return is_live=false with the most informative error.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const cfg = row.build_request_config && row.build_request_config.result && row.build_request_config.result.data; const accepted = (cfg && cfg.accepted_status_codes) || []; const variants = (cfg && cfg.variants) || []; const checks = [row.http_check_v1, row.http_check_v2, row.http_check_v3, row.http_check_v4]; const labels = ['https_bare', 'http_bare', 'https_www', 'http_www']; const trail = []; let winner = null; for (let i = 0; i < checks.length; i++) { const c = checks[i] && checks[i].result && checks[i].result.data; if (!c) { trail.push({ variant: labels[i], url: variants[i] || null, ran: false }); continue; } trail.push({ variant: labels[i], url: variants[i] || null, ran: true, status_code: c.status_code, final_url: c.final_url, error: c.error }); if (!winner && c.status_code && accepted.indexOf(c.status_code) !== -1) { winner = { variant: labels[i], url: variants[i] || null, status_code: c.status_code, final_url: c.final_url || variants[i] || null }; } } if (winner) return { is_live: true, status_code: winner.status_code, final_url: winner.final_url, winning_variant: winner.variant, attempted: trail, error: null }; const lastErr = trail.slice().reverse().find(function(x){ return x.ran && x.error; }); return { is_live: false, status_code: null, final_url: null, winning_variant: null, attempted: trail, error: (lastErr && lastErr.error) || 'all four URL variants failed' };"
+      }
+    },
+
+    {
+      "alias": "ai_parking_check",
+      "description": "AI parking-page detector. Runs only when one of the URL variants succeeded AND skip_ai_verification=false. Default cheap model is gpt-5-mini per agency policy.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.pick_winning_url && row.pick_winning_url.result && row.pick_winning_url.result.data && row.pick_winning_url.result.data.is_live === true) && (row.build_request_config && row.build_request_config.result && row.build_request_config.result.data && row.build_request_config.result.data.skip_ai_verification === false)",
+      "payload": {
+        "model": "{{build_request_config.result.data.ai_model}}",
+        "system": "ROLE: You are a business website verifier. Your job is to determine if a given website is real and belongs to an active or legitimate business.\n\nINPUTS: A website URL.\n\nINSTRUCTIONS: The website has already been confirmed to load. Mark the site as Not real ONLY if:\n- It shows a GoDaddy or domain registrar holding page.\n- It is just a blank lander with no content, branding, or structure.\n- If the site redirects to another real website or storefront, consider it Real.\nOtherwise, assume the site is Real — even if it is basic, small, or lightly designed.\n\nDECISION: Use judgment. If the page has any real content, structure, or branding — mark as Real. Only flag Not real for empty or placeholder pages.\n\nOUTPUT: Return ONLY valid JSON with two fields:\n  website_status: \"Real\" or \"Not real\"\n  reasoning: 1-2 sentence explanation (e.g. \"This is a domain placeholder from GoDaddy with no business content.\")\n\nIf you cannot fetch or read the page for any reason, return website_status=\"Real\" with reasoning=\"unverified — could not fetch\". We err toward keeping domains rather than removing them.",
+        "prompt": "Verify this website: {{pick_winning_url.result.data.final_url}}\n(winning variant: {{pick_winning_url.result.data.winning_variant}})\n\nFetch the page and judge per the system instructions. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "website_status": { "type": "string", "enum": ["Real", "Not real"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["website_status", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate is_live + AI verdict into the function's declared outputs. Default-to-keep on AI uncertainty.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const cfg = row.build_request_config && row.build_request_config.result && row.build_request_config.result.data; const pick = row.pick_winning_url && row.pick_winning_url.result && row.pick_winning_url.result.data; const aiOut = row.ai_parking_check && row.ai_parking_check.result && row.ai_parking_check.result.object; const is_live = !!(pick && pick.is_live === true); const skipAI = !!(cfg && cfg.skip_ai_verification === true); let is_real_business = null; let ai_reasoning = null; let aiRan = false; if (is_live && !skipAI) { aiRan = !!aiOut; if (aiOut && aiOut.website_status) { is_real_business = (aiOut.website_status === 'Real') ? true : (aiOut.website_status === 'Not real' ? false : null); ai_reasoning = aiOut.reasoning || null; } } const is_keepable = is_live && (skipAI || is_real_business !== false); return { is_live: is_live, is_real_business: is_real_business, is_keepable: is_keepable, http_status_code: pick ? pick.status_code : null, final_url: pick ? pick.final_url : null, winning_variant: pick ? pick.winning_variant : null, ai_reasoning: ai_reasoning, verification_signals: { http: { ran: !!pick, is_live: is_live, status_code: pick ? pick.status_code : null, final_url: pick ? pick.final_url : null, winning_variant: pick ? pick.winning_variant : null, attempted: pick ? pick.attempted : null, error: pick ? pick.error : 'pick_winning_url did not run' }, ai: { ran: aiRan, verdict: aiOut ? (aiOut.website_status || null) : null, reasoning: ai_reasoning, error: (aiRan && !aiOut) ? 'ai_parking_check produced no parsed object' : null } } };"
+      }
+    }
+  ]
+}

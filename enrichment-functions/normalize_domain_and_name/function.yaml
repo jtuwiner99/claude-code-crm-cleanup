@@ -1,0 +1,49 @@
+name: normalize_domain_and_name
+version: 1.0.0
+status: scaffold
+description: >
+  Normalize a raw domain (lowercase, strip protocol + www, trim path) and
+  optionally discover or clean a company name. If the caller provides a raw
+  company name, strip legal suffixes and normalize casing. If absent, run a
+  cheap AI web-research call to discover the legal name from the domain.
+
+inputs:
+  - name: domain_raw
+    type: string
+    required: true
+    description: Raw domain or website URL — gets normalized to a clean root domain.
+  - name: company_name_raw
+    type: string
+    required: false
+    description: Optional raw name; if absent, discovered from the domain via AI.
+  - name: record_id
+    type: string
+    required: false
+    description: Optional caller-provided primary key (e.g. HubSpot company ID). Passed through unchanged for downstream correlation.
+
+outputs:
+  - name: domain_clean
+    type: string
+    description: Lowercased root domain, no protocol, no www, no path.
+  - name: company_name_clean
+    type: string
+    description: Trimmed, casing-normalized, legal-suffix-stripped company name.
+  - name: company_name_raw_passthrough
+    type: string
+    description: Original input name preserved for audit.
+  - name: name_source
+    type: string
+    description: One of `input` | `ai_discovered`. Tells the caller whether the name came from the input or was inferred.
+
+providers: []
+ai_calls:
+  - when: company_name_raw is empty
+    primitive: deeplineagent
+    model_tier: cheap
+    estimated_tokens: 500
+estimated_cost_usd: 0.001
+
+invariants:
+  - domain_clean never contains "://", "www.", or trailing slashes
+  - company_name_clean has no trailing whitespace and no legal suffixes (Inc, LLC, Ltd, GmbH, Pty Ltd, S.A., etc.)
+  - record_id passes through bit-for-bit when supplied

@@ -1,0 +1,83 @@
+// commands.jsonc — normalize_domain_and_name @ 1.0.0
+//
+// Ported from Clay table "Normalize Domain & Company Name"
+//   (ported from production Clay table)
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_raw           required
+//   row.input.company_name_raw     optional
+//   row.input.record_id            optional — passthrough
+//
+// Output: composed at the final step (compose_output) so the function exposes
+// a single tidy envelope to callers.
+//
+// Conventions enforced (see project_deepline_csv_to_hosted_gotchas.md):
+//   - row['<input_field>'] for raw input reads (static analyzer rejects row.<unknown>)
+//   - row.<alias>.result.data for prior run_javascript primitive returns
+//   - row.<alias>.result.<field> for prior tool object returns
+//   - {{<alias>.result.data}} in template strings for primitives
+//   - run_if_js receives a JS expression evaluated against `row`
+
+{
+  "commands": [
+    {
+      "alias": "domain_clean",
+      "description": "Lowercase, strip protocol + www + path. Deterministic.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const src = (row.input && typeof row.input === 'object') ? row.input : row; const raw = (src && (src['domain_raw'] || src['Company Domain Name'] || src['domain'])) || ''; return String(raw).toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].split('?')[0].trim() || null;"
+      }
+    },
+
+    {
+      "alias": "name_normalize_from_input",
+      "description": "If a raw company name was supplied, normalize it via gpt-5-mini (agency default) — strip legal suffixes, normalize casing, collapse whitespace. Faithful port of Clay 'Normalized Company Name' use-ai column.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && (row.input.company_name_raw || row.input['Company Name'])) || row['company_name_raw'] || row['Company Name'])",
+      "payload": {
+        "model": "openai/gpt-5-mini",
+        "system": "You are a deterministic company-name normalization engine. Apply the rules to the raw_company_name and return JSON: { \"normalized_company_name\": \"<final clean name>\", \"reasoning\": \"<short explanation of what you changed>\" }. Rules apply per the input settings object; do not invent words; preserve brand-meaningful tokens.",
+        "prompt": "{ \"raw_company_name\": \"{{row.input.company_name_raw}}\", \"settings\": { \"normalize_case\": true, \"remove_legal_suffixes\": true, \"remove_articles\": false, \"strip_non_alphanumeric\": true, \"collapse_spaces\": true } }",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "normalized_company_name": { "type": "string" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["normalized_company_name"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "name_discover_from_domain",
+      "description": "If no company name was supplied, discover it via web-research from the cleaned domain. Faithful port of Clay 'Normalized Company Name (3)' Claygent column.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "!((row.input && (row.input.company_name_raw || row.input['Company Name'])) || row['company_name_raw'] || row['Company Name'])",
+      "payload": {
+        "system": "You discover and normalize a company name from a domain. Visit the website, identify the company, and return ONLY the normalized name (no quotes, no commentary). Apply normalization rules: shorten long-winded names as a human would in email; strip LLC/Inc/Ltd/Corp/Co/Group/Holdings/Partners/Associates/Enterprises/Industries/Technologies/Solutions/Services/International/Global/TM/SM/(R)/PLC/agency; remove domain extensions unless integral to the brand (Open.ai is integral); preserve brand-meaningful tokens (e.g. 'Food International' must not become 'Food'). Return JSON: { \"normalized_name\": \"<name>\" }.",
+        "prompt": "Domain to research and normalize: {{domain_clean.result.data}}",
+        "jsonSchema": {
+          "type": "object",
+          "properties": { "normalized_name": { "type": "string" } },
+          "required": ["normalized_name"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Pick whichever name source ran; emit the function's declared outputs as a single object.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const src = (row.input && typeof row.input === 'object') ? row.input : row; const rawName = src && (src['company_name_raw'] || src['Company Name']); const fromInput = row.name_normalize_from_input && row.name_normalize_from_input.result && row.name_normalize_from_input.result.object && row.name_normalize_from_input.result.object.normalized_company_name; const fromDiscovery = row.name_discover_from_domain && row.name_discover_from_domain.result && row.name_discover_from_domain.result.object && row.name_discover_from_domain.result.object.normalized_name; const company_name_clean = fromInput || fromDiscovery || null; const name_source = fromInput ? 'input' : (fromDiscovery ? 'ai_discovered' : 'none'); const record_id = (src && (src['record_id'] || src['Record ID'])) || null; return { domain_clean: row.domain_clean.result.data, company_name_clean: company_name_clean, company_name_raw_passthrough: rawName || null, name_source: name_source, record_id: record_id };"
+      }
+    }
+  ]
+}

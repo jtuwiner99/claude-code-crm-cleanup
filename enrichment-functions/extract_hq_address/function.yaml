@@ -1,0 +1,122 @@
+name: extract_hq_address
+version: 1.0.0
+status: ported_from_clay
+description: >
+  Extract a company's HQ address (street, city, state, postal_code,
+  country) and emit it in CRM-ready format with operator-controlled
+  formatting toggles (e.g. `MD` vs `Maryland`, `US` vs `United States`).
+  Two-source strategy: (1) try the cached LinkedIn provider payload from
+  upstream `linkedin_url_verified`; (2) fall back to AI web-scrape of the
+  company's official website (about / contact pages) when LinkedIn is
+  incomplete. Always-on default in account enrichment recipes — every
+  customer wants HQ address, regardless of whether they care about
+  territory verification (which is the separate opt-in
+  `country_presence_verified`).
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`). Used for the web-scrape fallback.
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name. Context for the AI agent.
+  - name: linkedin_full_provider_payload
+    type: object
+    required: true
+    description: >
+      Cached provider payload from `linkedin_url_verified.full_provider_payload`.
+      Function tries to read address fields here first. PDL's standard
+      enrich_company response does NOT include structured address fields
+      (only `data.location` if exposed at all) — so today this typically
+      falls through to web-scrape. Future upgrade to an Apify HarvestAPI
+      LinkedIn company actor would populate `headquarters` directly and
+      this function picks up the richer payload automatically.
+  - name: state_format
+    type: string
+    required: false
+    default: abbreviation
+    enum: [abbreviation, full]
+    description: >
+      `abbreviation` (default) → "MD" / "CA" / "NY" for US/Canada.
+      `full` → "Maryland" / "California" / "New York". Your CRM
+      field convention determines this — HubSpot defaults to full names;
+      many Salesforce orgs use abbreviations. Pick once per recipe.
+  - name: country_format
+    type: string
+    required: false
+    default: iso_alpha_2
+    enum: [iso_alpha_2, full]
+    description: >
+      `iso_alpha_2` (default) → "US" / "GB" / "DE". `full` → "United
+      States" / "United Kingdom" / "Germany". Same per-CRM convention
+      principle as state_format.
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: Agency-default cheap model (set 2026-05-01).
+
+outputs:
+  - name: hq_street
+    type: string
+    nullable: true
+    description: Street address line. May include suite/floor/unit.
+  - name: hq_city
+    type: string
+    nullable: true
+  - name: hq_state
+    type: string
+    nullable: true
+    description: Formatted per `state_format`. Null for countries without state-equivalents.
+  - name: hq_postal_code
+    type: string
+    nullable: true
+  - name: hq_country
+    type: string
+    nullable: true
+    description: Formatted per `country_format`.
+  - name: hq_full_address
+    type: string
+    nullable: true
+    description: Concatenated address suitable for direct CRM writeback. Format follows the formatting toggles.
+  - name: address_source
+    type: string
+    description: One of `linkedin` | `web_scrape` | `none`. Tells the caller which signal won.
+  - name: address_confidence
+    type: string
+    description: One of `high` | `medium` | `low`. `high` = verified through structured LinkedIn payload OR multiple website signals. `low` = inferred from a single page mention.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit: { linkedin: {ran, found, raw}, web_scrape: {ran, found,
+      reasoning}, formatting: {state_format, country_format} }.
+
+providers:
+  - name: deeplineagent
+    role: AI web-scrape fallback when LinkedIn payload doesn't contain a complete address.
+
+ai_calls:
+  - tier: web_scrape_fallback
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 2500
+    runs_when: LinkedIn payload didn't yield a complete address (current default — PDL doesn't expose address)
+estimated_cost_usd: 0.005  # one AI call per row; zero when LinkedIn payload is complete
+
+invariants:
+  - HQ address is the goal. Multi-location companies: function returns the HEADQUARTERS only, not a list. (Multi-office cases need a separate `extract_all_locations` function — not yet built.)
+  - Formatting is applied AT OUTPUT TIME, deterministically. The AI agent emits raw address fields; the JS formatting step normalizes to the requested abbreviation/full convention.
+  - When LinkedIn payload contains full address fields → `address_source=linkedin`, no AI call burned.
+  - When LinkedIn payload is incomplete (missing street OR city) → web-scrape fallback runs.
+  - When BOTH paths fail to find a complete address → `address_source=none`, all address fields null. Caller decides what to do (keep the row, flag for human review, etc.).
+
+clay_origin:
+  port_notes: >
+    Designed against the architecture pattern — LinkedIn-
+    primary with AI-agent web-scrape fallback, formatting toggles for
+    CRM writeback (MD vs Maryland, US vs United States). When you drop
+    the actual Clay table for address extraction, port-specific
+    refinements (specific provider preferences, edge cases for
+    international addresses) get layered in.

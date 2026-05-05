@@ -1,0 +1,32 @@
+// commands.jsonc — company_core_from_linkedin @ 1.0.0
+//
+// SCAFFOLD. Implementation pending Clay export of the equivalent
+// "LinkedIn → Firmographics" extraction.
+//
+// High-level flow:
+//
+//   1. payload_resolve
+//        run_javascript: if {{input.harvest_payload_cached}} is non-empty,
+//          return it directly. Otherwise emit a sentinel that triggers (2).
+//
+//   2. harvest_fetch
+//        run_if_js: payload_resolve returned the sentinel
+//        tool: <harvest_api_fetch_company_by_url>
+//        payload: { linkedin_url: "{{input.linkedin_url}}" }
+//
+//   3. extract_fields
+//        run_javascript: pluck employee_count, headquarters {street, city,
+//          state, postal_code, country}, industry, founded_year, website,
+//          description, specialties from whichever upstream payload populated.
+//
+//   4. derive_size_band
+//        run_javascript: deterministic banding from employee_count.
+//
+//   5. compose_output
+//        run_javascript: emit the declared outputs.
+
+{
+  "commands": [
+    // TODO(clay-port): see step-by-step flow above; populate from Clay export.
+  ]
+}
