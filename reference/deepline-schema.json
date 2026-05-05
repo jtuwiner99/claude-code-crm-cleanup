@@ -1,0 +1,595 @@
+{
+  "schemas": {
+    "apply": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "_comments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "lines": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "lines"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "_expansion_preview": {
+              "additionalProperties": false,
+              "properties": {
+                "plays": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "alias": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "estimated_credits_range": {
+                        "type": "string"
+                      },
+                      "runtime_group": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "steps": {
+                        "items": {
+                          "patternProperties": {
+                            "^(.*)$": {}
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "template_group": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "tool_id": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "alias",
+                      "tool_id",
+                      "template_group",
+                      "runtime_group",
+                      "estimated_credits_range",
+                      "steps"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "plays"
+              ],
+              "type": "object"
+            },
+            "commands": {
+              "items": {
+                "$id": "T2",
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "alias": {
+                        "description": "alias must be a non-empty string.",
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "description": {
+                        "description": "Short human-readable explanation of what this step does. Rendered in the pipeline UI.",
+                        "type": "string"
+                      },
+                      "disabled": {
+                        "type": "boolean"
+                      },
+                      "extract_js": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "operation": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "payload": {
+                        "patternProperties": {
+                          "^(.*)$": {}
+                        },
+                        "type": "object"
+                      },
+                      "run_if_js": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "tool": {
+                        "description": "tool must be a non-empty string.",
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "alias",
+                      "tool",
+                      "payload"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "commands": {
+                        "items": {
+                          "$ref": "T2"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "description": {
+                        "description": "Short human-readable explanation of what this waterfall block does. Rendered in the pipeline UI.",
+                        "type": "string"
+                      },
+                      "min_results": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "with_waterfall": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "with_waterfall",
+                      "commands"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "version": {
+              "const": 1,
+              "type": "number"
+            }
+          },
+          "required": [
+            "version",
+            "commands"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "publish": {
+          "type": "boolean"
+        },
+        "specification": {
+          "description": "Markdown document describing the workflow. Must include ## Goals, ## Description, ## Inputs, and ## Expected Outputs sections.",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "active",
+              "type": "string"
+            },
+            {
+              "const": "disabled",
+              "type": "string"
+            }
+          ]
+        },
+        "trigger": {
+          "additionalProperties": false,
+          "properties": {
+            "cron": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secret": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "const": "active",
+                  "type": "string"
+                },
+                {
+                  "const": "disabled",
+                  "type": "string"
+                }
+              ]
+            },
+            "trigger_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "trigger_name": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "trigger_tool": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "const": "webhook",
+                  "type": "string"
+                },
+                {
+                  "const": "api",
+                  "type": "string"
+                },
+                {
+                  "const": "cron",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "config"
+      ],
+      "type": "object"
+    },
+    "call": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "patternProperties": {
+            "^(.*)$": {}
+          },
+          "type": "object"
+        },
+        "revision_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "workflow_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "workflow_name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "call_body": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "patternProperties": {
+            "^(.*)$": {}
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "enrich_config": {
+      "additionalProperties": false,
+      "properties": {
+        "_comments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "lines": {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "lines"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "_expansion_preview": {
+          "additionalProperties": false,
+          "properties": {
+            "plays": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "alias": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "estimated_credits_range": {
+                    "type": "string"
+                  },
+                  "runtime_group": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "steps": {
+                    "items": {
+                      "patternProperties": {
+                        "^(.*)$": {}
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "template_group": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "alias",
+                  "tool_id",
+                  "template_group",
+                  "runtime_group",
+                  "estimated_credits_range",
+                  "steps"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "plays"
+          ],
+          "type": "object"
+        },
+        "commands": {
+          "items": {
+            "$id": "T2",
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "alias": {
+                    "description": "alias must be a non-empty string.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "Short human-readable explanation of what this step does. Rendered in the pipeline UI.",
+                    "type": "string"
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  },
+                  "extract_js": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "operation": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "payload": {
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    },
+                    "type": "object"
+                  },
+                  "run_if_js": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool": {
+                    "description": "tool must be a non-empty string.",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "alias",
+                  "tool",
+                  "payload"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "commands": {
+                    "items": {
+                      "$ref": "T2"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "description": {
+                    "description": "Short human-readable explanation of what this waterfall block does. Rendered in the pipeline UI.",
+                    "type": "string"
+                  },
+                  "min_results": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "with_waterfall": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "with_waterfall",
+                  "commands"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "version": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "version",
+        "commands"
+      ],
+      "type": "object"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "secret": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "active",
+              "type": "string"
+            },
+            {
+              "const": "disabled",
+              "type": "string"
+            }
+          ]
+        },
+        "trigger_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "trigger_name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trigger_tool": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "const": "webhook",
+              "type": "string"
+            },
+            {
+              "const": "api",
+              "type": "string"
+            },
+            {
+              "const": "cron",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  }
+}
