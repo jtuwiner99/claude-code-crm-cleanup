@@ -1,0 +1,96 @@
+# default-account-enrichment.yaml
+#
+# Reference recipe — the canonical account-enrichment composition. Reading
+# this top-down tells you the shape of the playbook the `/crm-cleanup`
+# skill assembles for an account-side run.
+#
+# This is a TEACHING file, not a runtime artifact. The runtime playbook is
+# generated per-run by the `/crm-cleanup` skill and lands at
+# `tmp/playbook.jsonc` with the user's specific properties baked in.
+#
+# Inputs (per CSV row):
+#   - domain          (required)
+#   - company_name    (required)
+#
+# Outputs (per row, written to enriched.csv) — column names match the
+# canonical per-function library exactly so the upgrade path is drop-in:
+#
+#   FROM verify_domain_alive:
+#     - is_live (bool), is_real_business (bool), is_keepable (bool)
+#     - http_status_code (int), winning_variant (string|null)
+#
+#   FROM detect_acquisition:
+#     - is_acquired (bool)
+#     - acquisition_confidence (int 0-100; confirmed=85, likely=65, none=10)
+#     - acquirer_name, acquirer_domain (e.g. "Salesforce", "salesforce.com")
+#     - acquired_original_domain (e.g. "simplivity.com" for SimpliVity → HPE)
+#     - is_dba_rebrand (bool — overrides is_acquired to false)
+#     - canonical_company_name, canonical_company_domain (always populated)
+#
+#   FROM detect_corporate_structure:
+#     - relationship_type (independent | parent | subsidiary)
+#     - parent_name, parent_domain (e.g. "Microsoft", "microsoft.com")
+#     - confidence (int 0-100)
+#
+#   FROM country_presence_verified:
+#     - verified_country_code (ISO-2 — "US", "SE", "DE", etc.)
+#
+#   FROM classify_via_latitude (single-dim industry):
+#     - industry_category (internal value — e.g. "b2b_saas")
+#     - industry_label (human-readable — e.g. "B2B SaaS")
+#
+#   SYNTHESIZED here (not in any single per-function output):
+#     - routing_flag (keep | drop | reroute_to_acquirer | verify_parent_routing)
+#     - ai_reasoning (short prose citing evidence)
+
+steps:
+  # 1. Normalize the domain. Deterministic JS.
+  - name: domain_clean
+    operation: run_javascript
+    description: Strip protocol/www/path; lowercase; bare host only.
+
+  # 2. HTTP liveness check. Deterministic — no AI cost.
+  - name: http_check
+    operation: generic_http_request
+    description: GET https://<domain_clean>; capture status code; note bouncing/dead domains for the verdict step.
+    gates:
+      - run_if: domain_clean is non-null
+
+  # 3. Single AI research pass. The hero-row spectacle.
+  - name: research
+    operation: deeplineagent
+    model: anthropic/claude-haiku-4.5
+    description: >
+      One AI call returns the full hero-row signal set: is_live,
+      is_real_business, is_acquired, acquirer_name,
+      is_subsidiary_or_division, parent_company, hq_country, industry,
+      reasoning. The model is given the company name + domain and instructed
+      to research the public web before answering. Conservative defaults —
+      prefers `is_acquired=false` on weak evidence to avoid mis-rerouting
+      legitimate prospects.
+    gates:
+      - run_if: domain_clean is non-null
+
+  # 4. Aggregate into a single fit verdict. Deterministic JS.
+  - name: verdict
+    operation: run_javascript
+    description: >
+      Combines HTTP + AI signals into is_keepable, is_live, and
+      routing_flag (keep | drop | reroute_to_acquirer |
+      verify_parent_routing). Surfaces all the columns the enriched CSV
+      will write.
+
+# What this recipe is NOT
+# ──────────────────────
+# - Not the full Sculpted production pipeline. Production layers in:
+#     • Apollo + PDL + Crustdata waterfalls (employee count, revenue, tech stack)
+#     • Multi-tier waterfalls with provider-fallback ordering
+#     • Latitude-managed prompts for industry classification + scoring
+#     • Per-customer scoring models (tier_rules_json)
+#     • QA loops with regression datasets
+#   That stack is what Sculpted runs for clients. Hire us to wire it up
+#   for your CRM, or use this giveaway as the foundation and build it out.
+#
+# - Not optimized for cost at scale. Every row makes one full AI research
+#   call. For 50,000-row jobs, the production pipeline runs HTTP + cheap
+#   provider lookups first and only invokes AI on rows that warrant it.
