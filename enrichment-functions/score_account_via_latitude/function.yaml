@@ -1,0 +1,144 @@
+name: score_account_via_latitude
+version: 1.0.0
+status: net-new  # Design grounded in recurring customer-scoring-doc patterns.
+description: >
+  Apply your account-scoring model and emit a tier (1..N) with
+  reasoning, sub-scores, and confidence. Routes through Latitude using a
+  single agency-level prompt at `account_scoring/score_tier` that takes
+  your tier rules as a parameter (analog to how
+  `classify_via_latitude` takes `categories_json`).
+  The your scoring model is a structured JSON file at
+  `your-recipe-folder/scoring-models/account.json` (see
+  the account-scoring-model schema). Hybrid shape:
+  rigid structured fields for deterministic axes (geo lists, size
+  thresholds, ICP sub-type mappings) plus prose for fuzzy parts (edge
+  cases, judgment guidance). The Latitude prompt applies the rigid
+  fields literally and uses the prose for soft / judgment calls.
+  Designed to run AFTER classify_via_latitude (so sub-type classification
+  is available) and AFTER any opt-in plugins (country_presence, m_and_a,
+  etc. — scoring should see all enrichment signals).
+
+inputs:
+  - name: account_signals
+    type: string
+    required: true
+    description: >
+      JSON-stringified object describing the row's enriched data. Plugin
+      assembles from upstream pipeline outputs (domain, company name,
+      country, employee count, classified sub-type, LinkedIn URL,
+      summary, etc.). See the latitude-prompt-spec.md for the recommended
+      shape.
+  - name: tier_rules_json
+    type: string
+    required: true
+    description: >
+      JSON-stringified scoring model conforming to the v1 schema at
+      the account-scoring-model schema. Plugin loads from
+      your scoring-models/account.json file and serializes.
+  - name: latitude_prompt_path
+    type: string
+    required: false
+    default: account_scoring/score_tier
+    description: >
+      Latitude document path. Defaults to the agency prompt; override
+      per-project when you need a tuned variant (rare — most use
+      the agency prompt with their tier_rules_json).
+  - name: latitude_project_id
+    type: string
+    required: false
+    description: >
+      Latitude project ID (numeric). Defaults to LATITUDE_PROJECT_ID env
+      var when absent.
+  - name: latitude_version
+    type: string
+    required: false
+    default: live
+    description: Latitude version to query. Use `live` in production; pin to a draft commit ID when smoke-testing prompt changes.
+  - name: latitude_api_key
+    type: string
+    required: true
+    description: >
+      Caller-supplied Latitude API key. Same security model as
+      classify_via_latitude — baked into the compiled playbook headers
+      because Deepline templating doesn't support env-var interpolation.
+      See classify_via_latitude/README.md for the implications.
+  - name: timeout_ms
+    type: integer
+    required: false
+    default: 60000
+    description: HTTP timeout for the Latitude documents/run call.
+
+outputs:
+  - name: tier
+    type: integer
+    nullable: true
+    description: >
+      The gate. Integer matching one of the tier values in
+      tier_rules_json.tiers (typically 1..4). Tier 1 = best, higher
+      numbers are progressively worse, top tier (e.g. Tier 4 in 4-tier
+      model) typically means disqualified. Null on Latitude failure.
+  - name: tier_label
+    type: string
+    nullable: true
+    description: Human-readable label for the tier (e.g. "Highest priority", "Disqualified"). Matches the corresponding tier's label in the scoring model.
+  - name: tier_reasoning
+    type: string
+    nullable: true
+    description: 2-4 sentence explanation citing which rules / overrides / edge cases fired.
+  - name: sub_scores
+    type: object
+    nullable: true
+    description: >
+      Breakdown of axis-level evaluations: { geo_score, size_score,
+      sub_type_score, rule_evaluations[] }. Useful for QA and operator
+      audit. See latitude-prompt-spec.md for the shape.
+  - name: confidence
+    type: integer
+    nullable: true
+    description: 0-100. AI's self-graded confidence in the tier verdict given signal quality.
+  - name: latitude_conversation_uuid
+    type: string
+    nullable: true
+    description: Latitude's conversation UUID for the call. Use to look up traces for QA / debugging.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit trail: { latitude: {ran, ok, error, raw_response_excerpt},
+      scoring_model: {schema_version, tier_count, object_type} }.
+
+providers:
+  - name: generic_http_request
+    role: HTTP call to Latitude documents/run endpoint. Same pattern as classify_via_latitude.
+
+ai_calls:
+  - tier: account_scoring
+    primitive: latitude
+    estimated_tokens: 2500
+    runs_when: always (when scoring is enabled in the recipe)
+estimated_cost_usd: 0.005
+
+invariants:
+  - One Latitude call per row. Cost predictable.
+  - Default-to-mid-tier on Latitude failure (per operator's bias_to_ai field; typically Tier 3 in a 4-tier model — the "OK / lower-priority" bucket). NEVER default to Tier 1 (false high-priority) or Tier 4 (false disqualifier).
+  - Your scoring model is the source of truth. The agency Latitude prompt is GENERIC — any model that matches the schema can run through it. No prompt-per-project.
+  - Sub-type classification (when used) MUST be upstream-emitted. The scoring function does NOT do its own sub-type classification — it relies on classify_via_latitude or the row's existing classification.
+  - latitude_api_key is baked into the compiled playbook headers; rotate keys → re-compile + wipe affected runs (same model as classify_via_latitude).
+
+clay_origin:
+  source: design-doc
+  exported_at: 2026-05-04
+  port_notes: >
+    Net-new function with no Clay table to port verbatim. Design driven by
+    the recurring pattern: a scoring doc gets handed over (or co-authored)
+    with tier definitions, geo / size / sub-type rules, and edge cases.
+    The doc becomes a structured JSON. A single shared Latitude prompt
+    applies it. Worked example included as a biotech-targeting B2B SaaS
+    scoring model — 1-4 tiers with geo overrides, ICP sub-type rules,
+    and edge cases for C-suite misclassification, hybrid roles, title
+    noise, etc.
+
+related:
+  - upstream: normalize_domain_and_name → company_summary_from_website → linkedin_url_verified → classify_via_latitude (sub_type classification)
+  - downstream: CRM writeback (recipe-level — the recipe author decides which CRM property to write the tier to)
+  - composes_with: country_presence_verified, detect_acquisition / acquired_brand_status, detect_corporate_structure, detect_company_division (any of these enrichment plugins; scoring sees their outputs in account_signals when they ran)
+  - prompt_spec: latitude-prompt-spec.md (in this directory)

@@ -1,0 +1,113 @@
+name: score_contact_fit
+version: 1.0.0
+status: net-new
+description: >
+  Aggregate already-classified contact signals (still_there + persona +
+  seniority) into a fit verdict (`ideal | acceptable | not_ideal`) using
+  a customer-supplied scoring rules JSON. Pure deterministic JS — no
+  AI, no provider calls. Distinct from `score_account_via_latitude` —
+  account scoring judges prose-heavy customer scoring docs (geo lists,
+  ICP sub-types, edge cases) where AI judgment over messy signals is
+  load-bearing. Contact scoring aggregates already-AI-resolved
+  categoricals, where deterministic logic is auditable, cheaper, and
+  faster.
+  When your scoring doc demands narrative judgment over contact
+  signals (rare — e.g. complex C-suite-level edge cases), use a future
+  `score_contact_via_latitude` opt-in instead. This function is
+  intentionally reserved for the typical case.
+
+inputs:
+  - name: still_there
+    type: boolean
+    required: true
+    description: Whether the contact is currently at the on-record company. Output of `detect_job_change.status === 'still_there'`.
+  - name: persona
+    type: string
+    required: true
+    description: >
+      Internal value from the contact-persona / contact-department
+      taxonomy (e.g. `revenue_operations`, `sales`). Output of
+      `classify_multi_dim_via_latitude.dimensions_result.<persona-dim-name>.category`.
+  - name: seniority
+    type: string
+    required: true
+    description: >
+      Internal value from the contact-seniority taxonomy (e.g.
+      `vp_or_head`, `director`). Output of
+      `classify_multi_dim_via_latitude.dimensions_result.<seniority-dim-name>.category`.
+  - name: tier_rules_json
+    type: string
+    required: true
+    description: >
+      JSON-stringified scoring rules conforming to v1 schema (see
+      `wiki/contact-scoring-model-schema.md` — to be authored alongside
+      this function). Plugin loads from your
+      `your-recipe-folder/scoring-models/contact.json` file and
+      serializes. v1 schema:
+      `{ schema_version: 1, object_type: "contact", still_there_required: bool,
+         target_personas: [<value>, ...], seniority_floor: <value>,
+         seniority_ladder: [<value>, ...] }`.
+  - name: identity_match
+    type: string
+    required: false
+    description: >
+      Optional — `validate_contact_identity.identity_match` (`confirmed`
+      | `weak` | `mismatch`). When passed, `mismatch` forces
+      `not_ideal` regardless of other signals. When not passed, function
+      assumes identity was validated upstream and skips the check.
+
+outputs:
+  - name: score
+    type: string
+    description: One of `ideal` | `acceptable` | `not_ideal`. The gate output for downstream CRM writeback / segmentation.
+  - name: score_reasoning
+    type: string
+    description: 1-2 sentence explanation of which rules fired (e.g. "Ideal — persona 'revenue_operations' is in target list AND seniority 'vp_or_head' meets floor 'director'").
+  - name: sub_scores
+    type: object
+    description: >
+      Axis breakdown for QA / audit:
+      `{ still_there_check: { passed, reason }, persona_check: { matched, value, target_personas },
+         seniority_check: { meets_floor, value, floor, ladder_index, floor_index } }`.
+  - name: verification_signals
+    type: object
+    description: Audit-trail container. Includes the schema_version of the parsed tier_rules_json so downstream tooling can reason about config drift.
+
+providers: []
+ai_calls: []
+estimated_cost_usd: 0  # No external calls.
+
+invariants:
+  - Pure deterministic. Same inputs → same outputs every time.
+  - When `tier_rules_json` is unparseable or missing required fields → throws (recipe author bug, not data bug — fail loud).
+  - When `still_there_required: true` and `still_there: false` → `score: not_ideal`, `score_reasoning` cites the still_there gate. Persona / seniority are NOT evaluated in that case (short-circuit).
+  - When `identity_match: 'mismatch'` is passed → `score: not_ideal` regardless of all other signals.
+  - `score: ideal` requires BOTH persona match AND seniority meeting the floor.
+  - `score: acceptable` requires EITHER persona match OR seniority meeting the floor (but not both — if both, it would be ideal).
+  - Seniority comparison is via `seniority_ladder` index. The ladder is ordered low-to-high (e.g. `[ic, manager, director, vp_or_head, c_level]`). `seniority_floor` index is the minimum; the contact's seniority must have a ladder index >= the floor index.
+  - When the contact's `seniority` value isn't in `seniority_ladder` → seniority_check.meets_floor=false, sub_scores.seniority_check.value still records the value (audit hook for taxonomy drift).
+  - When the contact's `persona` value isn't in `target_personas` AND seniority_check fails → not_ideal.
+
+clay_origin:
+  source: ontra-contact-model-static-cleanup (tier classification logic)
+  exported_at: 2026-05-04
+  port_notes: >
+    Ontra's Static Cleanup workbook ran a gpt-5 AI tier classifier
+    (Tier 1 / Tier 2 / Tier 3 / Bad Fit by firm type) — the prose-heavy
+    customer-doc-driven case where Latitude+AI is load-bearing. That
+    use case maps to a future `score_contact_via_latitude` opt-in if
+    your scoring doc demands prose judgment.
+    THIS function (score_contact_fit) is the deterministic case: the
+    typical your scoring rules are "in target persona AND at or
+    above seniority threshold AND still at the company" — pure
+    aggregation over categoricals. Using Latitude here would burn
+    cost on every row when JS gets the answer in microseconds. The
+    distinction is naming: `score_contact_fit` (deterministic) vs
+    `score_contact_via_latitude` (future, AI). Naming makes the
+    operator's expectation clear.
+
+related:
+  - upstream: detect_job_change, classify_multi_dim_via_latitude, validate_contact_identity (optional)
+  - sibling (account-side, AI): score_account_via_latitude — different design (Latitude over prose-heavy scoring docs); same input/output naming convention so operators recognize the pattern
+  - schema: wiki/contact-scoring-model-schema.md (to be authored)
+  - future: score_contact_via_latitude (opt-in) for customers whose scoring doc requires AI judgment over prose

@@ -1,0 +1,34 @@
+// commands.jsonc — score_contact_fit @ 1.0.0
+//
+// Pure deterministic — single JS step. No external calls, no AI.
+//
+// Logic:
+//   1. Parse tier_rules_json. Throw on missing required fields.
+//   2. If identity_match=='mismatch' → not_ideal (short-circuit).
+//   3. If still_there_required && !still_there → not_ideal.
+//   4. Compute persona_match (persona ∈ target_personas).
+//   5. Compute seniority_meets_floor (ladder_index(seniority) >= ladder_index(floor)).
+//   6. ideal = persona_match AND seniority_meets_floor.
+//      acceptable = persona_match OR seniority_meets_floor (XOR with ideal).
+//      not_ideal = otherwise.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.still_there       required boolean
+//   row.input.persona           required string
+//   row.input.seniority         required string
+//   row.input.tier_rules_json   required JSON string
+//   row.input.identity_match    optional string ('confirmed' | 'weak' | 'mismatch')
+
+{
+  "commands": [
+    {
+      "alias": "score",
+      "description": "Apply the scoring rules. Emits score + reasoning + sub_scores audit trail.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const i = row.input || {}; let rules = null; try { rules = JSON.parse(i.tier_rules_json); } catch (e) { throw new Error('tier_rules_json is not valid JSON: ' + e.message); } if (!rules) throw new Error('tier_rules_json missing'); if (!Array.isArray(rules.target_personas)) throw new Error('tier_rules_json.target_personas must be an array'); if (!Array.isArray(rules.seniority_ladder) || !rules.seniority_ladder.length) throw new Error('tier_rules_json.seniority_ladder must be a non-empty array'); if (!rules.seniority_floor) throw new Error('tier_rules_json.seniority_floor missing'); const stillThereRequired = rules.still_there_required !== false; const verifSignals = { schema_version: rules.schema_version || null, object_type: rules.object_type || null, still_there_required: stillThereRequired, identity_match_input: i.identity_match || null }; if (i.identity_match === 'mismatch') { return { score: 'not_ideal', score_reasoning: 'Identity mismatch — profile does not belong to the on-record contact. Scoring short-circuited.', sub_scores: { still_there_check: { passed: null, reason: 'skipped (identity mismatch)' }, persona_check: { matched: null, value: i.persona, target_personas: rules.target_personas }, seniority_check: { meets_floor: null, value: i.seniority, floor: rules.seniority_floor, ladder_index: null, floor_index: null } }, verification_signals: verifSignals }; } if (stillThereRequired && i.still_there !== true) { return { score: 'not_ideal', score_reasoning: 'Contact is no longer at the on-record company (still_there=false). Scoring short-circuited per still_there_required rule.', sub_scores: { still_there_check: { passed: false, reason: 'still_there_required is true but still_there is false' }, persona_check: { matched: null, value: i.persona, target_personas: rules.target_personas }, seniority_check: { meets_floor: null, value: i.seniority, floor: rules.seniority_floor, ladder_index: null, floor_index: null } }, verification_signals: verifSignals }; } const personaMatch = rules.target_personas.indexOf(i.persona) !== -1; const seniorityIdx = rules.seniority_ladder.indexOf(i.seniority); const floorIdx = rules.seniority_ladder.indexOf(rules.seniority_floor); if (floorIdx === -1) throw new Error('seniority_floor \"' + rules.seniority_floor + '\" not found in seniority_ladder'); const seniorityMeetsFloor = seniorityIdx !== -1 && seniorityIdx >= floorIdx; const stillThereCheck = { passed: !stillThereRequired || i.still_there === true, reason: stillThereRequired ? (i.still_there === true ? 'still_there=true' : 'still_there=false') : 'still_there_required=false (skipped)' }; const personaCheck = { matched: personaMatch, value: i.persona, target_personas: rules.target_personas }; const seniorityCheck = { meets_floor: seniorityMeetsFloor, value: i.seniority, floor: rules.seniority_floor, ladder_index: seniorityIdx, floor_index: floorIdx }; let score = null; let reasoning = ''; if (personaMatch && seniorityMeetsFloor) { score = 'ideal'; reasoning = 'Ideal — persona \"' + i.persona + '\" is in target list AND seniority \"' + i.seniority + '\" meets floor \"' + rules.seniority_floor + '\".'; } else if (personaMatch || seniorityMeetsFloor) { score = 'acceptable'; reasoning = 'Acceptable — ' + (personaMatch ? 'persona matches but seniority below floor (' + i.seniority + ' < ' + rules.seniority_floor + ').' : 'seniority meets floor but persona \"' + i.persona + '\" not in target list.'); } else { score = 'not_ideal'; reasoning = 'Not ideal — persona \"' + i.persona + '\" not in target list AND seniority \"' + i.seniority + '\" below floor \"' + rules.seniority_floor + '\".'; } return { score: score, score_reasoning: reasoning, sub_scores: { still_there_check: stillThereCheck, persona_check: personaCheck, seniority_check: seniorityCheck }, verification_signals: verifSignals };"
+      }
+    }
+  ]
+}
