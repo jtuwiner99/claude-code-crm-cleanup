@@ -1,0 +1,14 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+tmp/enriched.csv
+tmp/hubspot-properties.csv
+tmp/*.log
+tmp/playbooks/
+node_modules/
+.idea/
+.vscode/
