@@ -1,0 +1,59 @@
+// commands.jsonc — detect_corporate_structure @ 1.0.0
+//
+// Net-new agency function (no Clay table source). Grounded in the
+// M&A and Corporate Structure Playbook (the M&A and Corporate Structure Playbook).
+//
+// Pipeline shape:
+//   1. detect_structure   — AI: web research + structured-output verdict.
+//   2. compose_output     — JS: pass through with default-to-independent
+//                            on AI failure / low confidence.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean         required
+//   row.input.company_name_clean   required
+//   row.input.company_summary      required
+//   row.input.ai_model             optional (default openai/gpt-5-mini)
+
+{
+  "commands": [
+    {
+      "alias": "detect_structure",
+      "description": "Single-tier AI corporate-structure detection. Distinguishes independent / parent / subsidiary across DIFFERENT legal entities. NOT for same-entity regional or BU branches (use detect_company_division for that). NOT specifically for M&A events (detect_acquisition handles those — both signals can coexist on a row).",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a corporate-structure analysis expert. Your job is to determine, for a given input company, whether it is:\n\n- INDEPENDENT: stands alone with no parent corporation owning it and no notable subsidiaries underneath it. This is the default case for most companies.\n- PARENT: a holding company or portfolio parent that owns one or more subsidiary brands as DISTINCT LEGAL ENTITIES. Examples: Bloomin' Brands (owns Outback Steakhouse, Carrabba's, Bonefish Grill), Frito-Lay (owns Lays, Doritos, etc., though Frito-Lay itself is owned by PepsiCo). Restaurant holding LLCs that own 5-10 family restaurants.\n- SUBSIDIARY: owned by a parent corporation as a DISTINCT LEGAL ENTITY. Examples: Outback Steakhouse owned by Bloomin' Brands; SimpliVity owned by HPE post-acquisition.\n\nCRITICAL DISTINCTIONS\n\n1. Different legal entities only. This function is about CORPORATE STRUCTURE across distinct legal entities. NOT about regional divisions of the same legal entity. H&M UK is part of H&M Hennes & Mauritz AB (same legal entity, just a regional branch) — that is INDEPENDENT here. For regional / business-unit detection, a separate function (detect_company_division) handles it.\n\n2. Independent of acquisition events. A subsidiary may have been acquired (Outback was acquired by OSI Restaurant Partners, which became Bloomin' Brands) OR always-owned (Lays was created by Frito-Lay). This function emits the CURRENT structural fact, not the historical event. If a subsidiary was recently acquired, detect_acquisition will fire on the same row — both signals coexist.\n\n3. DBA / rebrand is NOT a parent-child relationship. ClickUp dba Mango Technologies is ONE legal entity with two names — independent here, not a subsidiary.\n\n4. Franchises with corporate parents: when a franchise operates as its own legal entity but rolls up to a master franchisor, treat as subsidiary. When the franchisee IS the franchisor (corporate-owned location), treat as parent or independent depending on whether you can identify the corporate parent.\n\nEVIDENCE SOURCES (in priority order)\n- Wikipedia infobox `parent` / `subsidiaries` fields — most reliable.\n- Corporate filings, SEC documents, state registrations.\n- Website footers: 'A [Parent] Brand', 'A [Parent] Company', 'Part of the [Parent] family of brands'.\n- Brand-portfolio pages on the parent's website listing owned brands.\n- LinkedIn 'Affiliated companies' or 'Showcase pages' links.\n- Press releases mentioning ownership or portfolio inclusion.\n\nCOVERAGE / ENUMERATION\n- For PARENT cases, enumerate the parent's most-notable subsidiaries (3-7 brands typical). For conglomerates with too many to enumerate cleanly (e.g. Berkshire Hathaway, Procter & Gamble), set known_subsidiaries=null with reasoning='too many to enumerate cleanly'.\n- For SUBSIDIARY cases, identify the immediate parent (one level up). If the immediate parent is itself a subsidiary of a larger entity, mention that in reasoning but emit the immediate parent in parent_name + parent_domain.\n\nDEFAULT-TO-INDEPENDENT on uncertainty. When evidence is mixed or weak, prefer relationship_type='independent'. False positives (incorrectly tagging an independent company as subsidiary) corrupt CRM routing — false negatives (missing a subsidiary relationship) just leave the record un-tagged.\n\nReturn ONLY valid JSON:\n{\n  relationship_type: 'independent'|'parent'|'subsidiary',\n  parent_name: <string or null>,\n  parent_domain: <string or null>,\n  known_subsidiaries: <array of strings or null>,\n  confidence: <integer 0-100>,\n  evidence: <string — 1-3 sentences citing specific evidence>,\n  reasoning: <string — 2-4 sentences on the verdict>\n}",
+        "prompt": "Company name: \"{{row.input.company_name_clean}}\"\nDomain: \"{{row.input.domain_clean}}\"\nCompany summary (grounding):\n\"{{row.input.company_summary}}\"\n\nResearch the corporate structure of this company. Determine whether it is independent, a parent (owns subsidiary brands), or a subsidiary (owned by a parent). Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "relationship_type": { "type": "string", "enum": ["independent", "parent", "subsidiary"] },
+            "parent_name": { "type": ["string", "null"] },
+            "parent_domain": { "type": ["string", "null"] },
+            "known_subsidiaries": {
+              "type": ["array", "null"],
+              "items": { "type": "string" }
+            },
+            "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "evidence": { "type": "string" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["relationship_type", "confidence", "evidence", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate AI output into the function's declared outputs. Default-to-independent on AI failure. Confidence < 50 → treat as uncertain (still emit the AI verdict, but caller can gate stricter).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const t = row.detect_structure && row.detect_structure.result && row.detect_structure.result.object; const tErr = row.detect_structure && row.detect_structure.result && row.detect_structure.result.error; if (!t) { return { relationship_type: null, parent_name: null, parent_domain: null, known_subsidiaries: null, confidence: null, relationship_evidence: null, ai_reasoning: tErr ? ('AI step failed: ' + tErr) : 'AI step did not run', verification_signals: { ai: { ran: false, error: tErr || 'no AI output' } } }; } const rt = t.relationship_type || null; const isSub = rt === 'subsidiary'; const isParent = rt === 'parent'; return { relationship_type: rt, parent_name: isSub ? (t.parent_name || null) : null, parent_domain: isSub ? (t.parent_domain || null) : null, known_subsidiaries: isParent ? (Array.isArray(t.known_subsidiaries) ? t.known_subsidiaries : null) : null, confidence: typeof t.confidence === 'number' ? t.confidence : null, relationship_evidence: t.evidence || null, ai_reasoning: t.reasoning || null, verification_signals: { ai: { ran: true, raw_verdict: rt, confidence: t.confidence, evidence: t.evidence, reasoning: t.reasoning, error: null } } };"
+      }
+    }
+  ]
+}

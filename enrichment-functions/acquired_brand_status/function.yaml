@@ -1,0 +1,152 @@
+name: acquired_brand_status
+version: 1.0.0
+status: ported_from_clay
+description: >
+  For a company already flagged as acquired (by upstream `detect_acquisition`),
+  decide whether the acquired brand is still operating as a standalone entity
+  (`independent`), has been fully absorbed into the acquirer (`absorbed`), or
+  is no longer reachable (`inactive`). Three-step pipeline:
+  (1) deterministic redirect-to-parent check — compare the post-redirect host
+  from upstream `verify_domain_alive.final_url` against the acquirer's domain;
+  if they match the brand has been absorbed (no AI call needed);
+  (2) deterministic short-circuit branches — `verify_domain_alive.is_live=false`
+  → `inactive`; `redirected_to_parent=true` → `absorbed`;
+  (3) AI homepage-language judgment — only fires when neither short-circuit
+  hit. The agent visits the live acquired-co domain and judges whether the
+  homepage is still pitching the original brand (active / standalone) or has
+  been replaced by "we're now part of X" language pushing visitors to the
+  acquirer (absorbed). Default-to-independent on AI uncertainty — explicit
+  Clay-table guidance: bias toward Active unless >90% confident in absorption.
+  Designed as the validation half of the M&A toggle, paired with
+  `detect_acquisition`. Reuses upstream `verify_domain_alive` output for
+  liveness + redirect signals — does NOT call any paid third-party HTTP
+  service.
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain of the ACQUIRED company (output of `normalize_domain_and_name`).
+  - name: acquirer_domain
+    type: string
+    required: true
+    description: >
+      Root domain of the acquiring company (output of
+      `detect_acquisition.acquirer_domain`). Used by the deterministic
+      redirect-to-parent check. Required — without it the function cannot
+      distinguish a homepage redirect to the acquirer (= absorbed) from a
+      generic redirect to some other host.
+  - name: verify_domain_alive_output
+    type: object
+    required: true
+    description: >
+      Full struct returned by upstream `verify_domain_alive`. The function
+      reads `is_live`, `final_url`, and `http_status_code` from this payload.
+      Required — bringing the verify_domain_alive call inline here would
+      double the HTTP cost when the calling recipe already ran it as part
+      of the default spine.
+  - name: linkedin_full_provider_payload
+    type: object
+    required: false
+    description: >
+      Cached PDL / LinkedIn payload (when available from upstream
+      `linkedin_url_verified`). Optional — when present, the AI judgment
+      step uses employee-count + locations as additional evidence for the
+      independent-vs-absorbed call. When absent, the AI uses only homepage
+      content.
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for the AI judgment step. Defaults to gpt-5-mini per default policy (set 2026-05-01).
+
+outputs:
+  - name: status
+    type: string
+    description: >
+      One of `independent` | `absorbed` | `inactive`. The aggregate gate.
+      `independent` = brand still operating standalone; route as a child of
+      acquirer in CRM. `absorbed` = brand fully merged into acquirer; the
+      record should be deduped or routed to the acquirer's owner.
+      `inactive` = domain offline / no longer reachable; record likely
+      stale and droppable. Default-to-independent on AI uncertainty.
+  - name: redirected_to_parent
+    type: boolean
+    description: >
+      Deterministic JS check. True when `verify_domain_alive_output.final_url`
+      resolves to a host on `acquirer_domain` (the acquired domain redirects
+      to the acquirer's site — strong absorbed signal). False when no
+      redirect or redirect goes elsewhere.
+  - name: is_active
+    type: boolean
+    description: >
+      Convenience field: `(status === 'independent')`. Recipe authors who
+      only need a binary "keep or drop" gate can read this directly.
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: AI judgment reasoning. Null when the AI step didn't run (deterministic short-circuit hit).
+  - name: verification_signals
+    type: object
+    description: >
+      Audit trail: { redirect_check: {ran, final_url, final_url_host,
+      acquirer_domain, redirected_to_parent}, liveness: {is_live,
+      http_status_code, final_url}, ai_judgment: {ran, status, reasoning,
+      error} }.
+
+providers:
+  - name: deeplineagent
+    role: AI homepage-language judgment. Replaces Clay's chained Status Research + Status Decision gpt-4o calls AND the ApiVoid liveness call (deferred to upstream `verify_domain_alive`).
+
+ai_calls:
+  - tier: homepage_language_judgment
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 2000
+    runs_when: verify_domain_alive_output.is_live === true && redirected_to_parent === false
+estimated_cost_usd: 0.004  # one AI call when the deterministic short-circuits don't fire
+
+invariants:
+  - The function makes ZERO paid HTTP calls. All liveness + redirect signals come from upstream `verify_domain_alive`'s `final_url` and `is_live` fields. Re-running an HTTP probe here would double the cost when the calling recipe already paid for it in the default spine.
+  - Deterministic short-circuits ALWAYS take precedence over the AI step. If `is_live=false` → `status=inactive` (no AI call). If `redirected_to_parent=true` → `status=absorbed` (no AI call). The AI step runs only when the brand is live AND not redirecting to the acquirer — that's the case where homepage language is the only signal that distinguishes active-standalone from absorbed-with-soft-banner.
+  - Default-to-independent on AI uncertainty. When the AI step fails or is unsure, `status=independent`. Matches the Clay table's explicit guidance ('bias toward Active unless >90% sure inactive') — false negatives (incorrectly marking absorbed as independent) cost a duplicate-enrichment downstream; false positives (incorrectly dropping a still-operating brand) cost a relationship.
+  - The function MUST be called downstream of `detect_acquisition` (or an equivalent acquirer-domain source). Calling it on a non-acquired record is meaningless — there's no acquirer to redirect to.
+  - The redirect-to-parent check uses HOST comparison, not full URL match. `https://www.clearbit.com/about` redirecting to `https://www.hubspot.com/products/breeze-intelligence` matches because the final-URL host (hubspot.com) equals or ends-in `acquirer_domain` (hubspot.com). www and subdomain prefixes are stripped before comparison.
+
+clay_origin:
+  source: Clay table — Active / Inactive company check
+  exported_at: 2026-05-01
+  port_notes: >
+    Clay table is 28 columns. ApiVoid HTTP API call (paid third-party URL
+    status / redirect / suspended-page check) DROPPED — replaced by reusing
+    upstream `verify_domain_alive`'s `final_url` and `is_live` outputs. This
+    is a deliberate library-wide consolidation: `verify_domain_alive` is
+    already part of the default account-enrichment spine, so its outputs
+    are always available to downstream functions in any recipe that uses
+    M&A detection. ApiVoid's `url_taken_down` registrar flag is functionally
+    covered by `verify_domain_alive`'s AI parking-page detector — both flag
+    the same class of "domain offline / suspended / placeholder" pages.
+    Clay's two AI calls (Status Research → Status Decision) collapsed to
+    one deeplineagent call. Original Clay flow:
+    - Status Research: AI scrapes the website home page, writes a
+      narrative summary of "is this brand still standalone".
+    - Status Decision: separate AI call reads the narrative, emits
+      Active|Inactive verdict. Bias toward Active unless >90% confident.
+    The port collapses these into a single structured-output call: the
+    agent visits the homepage and returns a structured `status` enum
+    (`independent`|`absorbed`|`inactive`) directly with reasoning. Saves
+    one call of context-shedding and matches the canonical 3-state model
+    used in the playbook skill.
+    Clay's `Lookup Single Row in Other Table` (cross-table parent-domain
+    lookup) and `Write to Other Table` (downstream-tracking writeback) are
+    DROPPED — both are recipe-level concerns, not function-level. The
+    parent-domain comes in as the `acquirer_domain` input; the downstream
+    writeback is the calling recipe's job.
+    Models bumped from Clay's gpt-4o to gpt-5-mini
+    default (2026-05-01).
+
+related:
+  - upstream: detect_acquisition (gate on `is_acquired=true`); verify_domain_alive (provides liveness + final_url); linkedin_url_verified (optional payload for AI grounding)
+  - downstream: classify_via_latitude (gated on `status === 'independent'` when M&A-strict pattern is used); CRM writeback (recipe-level)
+  - playbook: skills/ma-and-corporate-structure-playbook

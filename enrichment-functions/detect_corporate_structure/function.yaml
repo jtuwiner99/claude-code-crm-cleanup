@@ -1,0 +1,139 @@
+name: detect_corporate_structure
+version: 1.0.0
+status: ported_from_clay  # Net new design grounded in playbook examples; no Clay table source.
+description: >
+  Detect durable parent-child relationships across DIFFERENT legal entities,
+  independent of any acquisition event. Distinct from `detect_acquisition`
+  (which looks for a point-in-time M&A event); this function looks for
+  *current corporate ownership structure* regardless of how it came to be.
+  Targets restaurant brand portfolios (Outback Steakhouse owned by Bloomin'
+  Brands; Lays under Frito-Lay under PepsiCo), family-owned restaurant
+  groups (a holding LLC owns 5–10 restaurants), franchises with corporate
+  parents, aviation portfolios, conglomerate divisions with their own
+  brand identity (Berkshire Hathaway portfolio companies, GE divisions
+  pre-spin).
+  Single-tier AI pipeline: one deeplineagent call that uses web research
+  to determine whether the input company is independent, a parent (owns
+  subsidiaries), or a subsidiary (owned by a parent). When subsidiary,
+  emits the parent's name and domain so HubSpot workflows can correlate
+  parent ↔ child records.
+  Default-to-not-flagged on uncertainty: false positives (incorrectly
+  tagging an independent company as subsidiary) corrupt CRM routing more
+  than missing a true subsidiary relationship.
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name (output of `normalize_domain_and_name`).
+  - name: company_summary
+    type: string
+    required: true
+    description: >
+      Dense company summary (output of `company_summary_from_website`). Used
+      as grounding so the AI doesn't have to re-fetch the website and can
+      ground its corporate-structure judgment in the company's own marketing
+      language ("we are a Bloomin' Brands company", footers, etc.).
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for the AI step. Defaults to gpt-5-mini per default policy (set 2026-05-01).
+
+outputs:
+  - name: relationship_type
+    type: string
+    nullable: true
+    description: >
+      Enum: `independent` | `parent` | `subsidiary`. The gate. `independent`
+      = no parent and no notable subsidiaries. `parent` = the input is a
+      holding company / portfolio parent that owns child brands. `subsidiary`
+      = the input is owned by a parent corporation. Null on AI failure
+      (caller treats null as "not checked", NOT as "independent").
+  - name: parent_name
+    type: string
+    nullable: true
+    description: >
+      When `relationship_type=subsidiary`, the canonical name of the parent
+      corporation (e.g. "Bloomin' Brands" for Outback Steakhouse). Null when
+      relationship_type is not subsidiary.
+  - name: parent_domain
+    type: string
+    nullable: true
+    description: >
+      Root domain of the parent corporation (e.g. "bloominbrands.com").
+      Null when relationship_type is not subsidiary OR when the parent
+      doesn't have a discoverable corporate domain (rare — most legal-entity
+      parents do).
+  - name: known_subsidiaries
+    type: array
+    nullable: true
+    description: >
+      When `relationship_type=parent`, an array of the parent's most-notable
+      portfolio brands (best-effort from web research). Null when not parent
+      OR when the parent has too many subsidiaries to enumerate cleanly
+      (conglomerates — return null and let CRM logic handle that case).
+  - name: confidence
+    type: integer
+    nullable: true
+    description: 0-100. AI's self-graded confidence in its verdict. Below 50 should be treated as effectively "uncertain — default to independent".
+  - name: relationship_evidence
+    type: string
+    nullable: true
+    description: >
+      1-3 sentences citing the specific evidence the AI relied on (e.g.
+      "outbacksteakhouse.com footer reads 'A Bloomin' Brands company';
+      Wikipedia infobox lists Bloomin' Brands as parent.").
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: Full AI reasoning. For human review and trace lookup.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit trail: { ai: {ran, raw_verdict, confidence, evidence, reasoning,
+      error}, evidence_sources: [<short string>, ...] }.
+
+providers:
+  - name: deeplineagent
+    role: One AI call with structured output. Web search + structured-output reasoning.
+
+ai_calls:
+  - tier: corporate_structure_detection
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 3000
+    runs_when: always
+estimated_cost_usd: 0.005
+
+invariants:
+  - One AI call per row. Cost predictable.
+  - Default-to-independent on AI uncertainty. False positives (incorrectly tagging an independent company as subsidiary) corrupt CRM routing more than missing a true subsidiary relationship.
+  - DOES NOT detect M&A events. A subsidiary that became one via acquisition will be tagged `subsidiary` here AND `is_acquired=true` by `detect_acquisition` — both signals coexist. Use `detect_acquisition` for the event-based question.
+  - DOES NOT detect regional / business-unit divisions of the SAME legal entity. H&M UK is `independent` here (it's part of H&M's legal entity, not a separate company). For division detection, use `detect_company_division`.
+  - When `relationship_type=parent` with `known_subsidiaries=null`, the AI judged this as a parent but couldn't enumerate subsidiaries (conglomerate or high-fanout case). Caller should NOT treat null as "no subsidiaries"; treat as "many — out of scope".
+
+clay_origin:
+  source: design-doc
+  exported_at: 2026-05-04
+  port_notes: >
+    Net-new agency function with no Clay table to port verbatim from. Design
+    grounded in the worked examples in the M&A and Corporate Structure
+    Playbook skill (Outback / Bloomin' Brands; Lays under Frito-Lay under
+    PepsiCo; restaurant family groups; aviation portfolios). The structured
+    output shape mirrors `detect_acquisition` for consistency, with
+    `relationship_type` replacing `is_acquired` as the gate.
+    When a future enrichment project provides a Clay-table reference
+    implementation, this function may be re-grounded against it without a
+    contract change.
+
+related:
+  - upstream: normalize_domain_and_name → company_summary_from_website
+  - downstream: classify_via_latitude (gated when `relationship_type === 'subsidiary'` and your strict mode wants to enrich the parent record instead)
+  - composes_with: detect_acquisition (M&A event detection); detect_company_division (same-legal-entity branch detection)
+  - playbook: skills/ma-and-corporate-structure-playbook

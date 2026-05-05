@@ -1,0 +1,68 @@
+// commands.jsonc — acquired_brand_status @ 1.0.0
+//
+// Ported from Clay table "(f) Active/In-active Company Check"
+//   (production Clay workspace, <table-id-redacted>, exported 2026-05-01,
+//    parent-child relationships + M&A workflow).
+//
+// Pipeline shape:
+//   1. redirect_to_parent_check       — JS deterministic: compare verify_domain_alive.final_url
+//                                        host against acquirer_domain.
+//   2. homepage_language_judgment     — AI: visit acquired-co homepage and decide
+//                                        independent | absorbed | inactive.
+//                                        Runs ONLY when is_live=true AND redirected_to_parent=false.
+//   3. compose_output                  — JS: aggregate. Deterministic short-circuits dominate;
+//                                        default-to-independent on AI failure.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean                    required (acquired company's domain)
+//   row.input.acquirer_domain                 required (parent's domain — from detect_acquisition)
+//   row.input.verify_domain_alive_output      required (full struct from upstream)
+//   row.input.linkedin_full_provider_payload  optional
+//   row.input.ai_model                        optional (default openai/gpt-5-mini)
+
+{
+  "commands": [
+    {
+      "alias": "redirect_to_parent_check",
+      "description": "Deterministic JS host-comparison: does verify_domain_alive.final_url resolve to a host on acquirer_domain? www / subdomain prefixes are stripped before comparison. Replaces Clay's ApiVoid call entirely — verify_domain_alive already gave us final_url for free.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const vda = (row.input && row.input.verify_domain_alive_output) || {}; const acquirerDomain = (row.input && row.input.acquirer_domain) || null; const finalUrl = vda.final_url || null; const isLive = vda.is_live === true; const httpStatus = vda.http_status_code != null ? vda.http_status_code : null; let finalHost = null; let redirectedToParent = false; if (finalUrl && typeof finalUrl === 'string') { try { const u = new URL(finalUrl.startsWith('http') ? finalUrl : 'https://' + finalUrl); finalHost = u.hostname.toLowerCase().replace(/^www\\./, ''); } catch (e) { finalHost = null; } } if (finalHost && acquirerDomain) { const acq = String(acquirerDomain).toLowerCase().replace(/^www\\./, '').replace(/^https?:\\/\\//, '').split('/')[0]; if (finalHost === acq || finalHost.endsWith('.' + acq)) { redirectedToParent = true; } } return { redirected_to_parent: redirectedToParent, final_url: finalUrl, final_url_host: finalHost, acquirer_domain: acquirerDomain, is_live: isLive, http_status_code: httpStatus };"
+      }
+    },
+
+    {
+      "alias": "homepage_language_judgment",
+      "description": "AI judgment on whether the acquired brand is still operating standalone (independent) or has been replaced by 'we're now part of X' content pushing visitors to the acquirer (absorbed). Folds Clay's Status Research + Status Decision into one structured call. Runs ONLY when the acquired domain is live AND has not redirected to the acquirer — those are the cases where homepage language is the deciding signal.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.redirect_to_parent_check && row.redirect_to_parent_check.result && row.redirect_to_parent_check.result.data && row.redirect_to_parent_check.result.data.is_live === true && row.redirect_to_parent_check.result.data.redirected_to_parent === false)",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "Your job is to decide whether an acquired company is still operating as a standalone brand or has been fully absorbed into the acquirer. You will be given the acquired company's domain (currently live, not redirecting to the acquirer's site) and the acquirer's name + domain.\n\nVISIT the acquired company's homepage. Read the home page content carefully. You may visit a few additional pages (about, products) if the homepage is sparse.\n\nTHREE-STATE OUTPUT (do NOT collapse to binary)\n- independent: the homepage is still pitching the acquired company's product / brand as a standalone offering. Even if there is a small banner, footer, or press release mentioning the acquisition (e.g. 'Slack is now part of Salesforce' tucked away), the bulk of the homepage is the acquired company's own marketing — the brand is still operating. The company still has its own employees, social presence, and customer-facing identity.\n- absorbed: the homepage is primarily about the acquisition. Hero text says 'we're now part of X', 'X has joined Y', 'visit Y to learn more'. The acquired brand's product is no longer being marketed as standalone; visitors are pushed to the acquirer. Even if the domain hasn't redirected yet, the site has effectively become an acquisition announcement page.\n- inactive: the homepage shows no normal business content — domain expired, registrar holding page, server error, blank page. (This case is RARE here because the function only runs when verify_domain_alive said is_live=true; if the AI sees a parking-page-style site, return inactive — the AI is the second line of defense.)\n\nBIAS RULES (CRITICAL — from the original Clay table)\n- Bias toward 'independent' unless you are >90% confident the brand has been absorbed.\n- A press release banner or small section saying 'we joined X' is NOT enough to call absorbed — the homepage hero must be primarily about the acquisition.\n- Reference example: Clearbit's homepage (clearbit.com) post-HubSpot-acquisition says 'Clearbit has joined HubSpot' as the dominant homepage message, no remaining product marketing — that's absorbed.\n- Counter-example: Slack's homepage (slack.com) post-Salesforce-acquisition still markets Slack as a standalone product with normal hero copy — that's independent (even though they're owned by Salesforce).\n\nReturn ONLY valid JSON: { status: 'independent'|'absorbed'|'inactive', confidence: 'high'|'medium'|'low', reasoning: <string — 2-4 sentences citing specific homepage text or sections> }",
+        "prompt": "acquired_company_domain (visit this): \"{{row.input.domain_clean}}\"\nacquirer_domain (where they were acquired by — for context, do NOT visit): \"{{row.input.acquirer_domain}}\"\nverify_domain_alive_final_url (where the acquired domain currently resolves): \"{{redirect_to_parent_check.result.data.final_url}}\"\n\nVisit the acquired company's homepage and judge their current operational status. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["independent", "absorbed", "inactive"] },
+            "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["status", "confidence", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate signals into the function's declared outputs. Deterministic short-circuits dominate: is_live=false → inactive; redirected_to_parent=true → absorbed; otherwise read the AI verdict. AI failure → default-to-independent (matches Clay table's bias-toward-Active rule).",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const r = row.redirect_to_parent_check && row.redirect_to_parent_check.result && row.redirect_to_parent_check.result.data; const j = row.homepage_language_judgment && row.homepage_language_judgment.result && row.homepage_language_judgment.result.object; const jErr = row.homepage_language_judgment && row.homepage_language_judgment.result && row.homepage_language_judgment.result.error; const isLive = r ? r.is_live : null; const redirected = r ? r.redirected_to_parent : false; let status; let aiReasoning = null; let aiRan = false; if (isLive === false) { status = 'inactive'; } else if (redirected === true) { status = 'absorbed'; } else if (j && (j.status === 'independent' || j.status === 'absorbed' || j.status === 'inactive')) { status = j.status; aiReasoning = j.reasoning || null; aiRan = true; } else { status = 'independent'; if (jErr) { aiReasoning = 'AI judgment failed; defaulted to independent per default-to-keep rule.'; } } return { status: status, redirected_to_parent: redirected, is_active: status === 'independent', ai_reasoning: aiReasoning, verification_signals: { redirect_check: { ran: !!r, final_url: r ? r.final_url : null, final_url_host: r ? r.final_url_host : null, acquirer_domain: r ? r.acquirer_domain : null, redirected_to_parent: redirected }, liveness: { is_live: isLive, http_status_code: r ? r.http_status_code : null, final_url: r ? r.final_url : null }, ai_judgment: { ran: aiRan, status: j ? j.status : null, confidence: j ? j.confidence : null, reasoning: j ? j.reasoning : null, error: jErr || null } } };"
+      }
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+name: detect_acquisition
+version: 1.0.0
+status: ported_from_clay
+description: >
+  Detect whether a company has been acquired or merged into another company,
+  and identify the parent. Two-tier AI pipeline:
+  (1) combined detection + analysis + DBA disambiguation — one deeplineagent
+  call that decides whether evidence supports an acquisition, extracts the
+  acquirer + acquired-company names, and distinguishes a true acquisition
+  from a DBA / rebrand (e.g. ClickUp dba Mango Technologies should NOT be
+  flagged as acquired). Returns canonical company name + domain in both
+  branches so downstream callers don't need a tagged-union;
+  (2) acquirer + original-domain + new-product-page lookup — a second
+  deeplineagent call that only fires when is_acquired=true, finding the
+  original pre-acquisition domain (e.g. simplivity.com for SimpliVity →
+  HPE), the acquirer's root domain, and any dedicated landing page on the
+  acquirer's site (e.g. clari.com/products/groove/) vs. a homepage
+  redirect. Designed as an opt-in add-on for engagements where M&A
+  qualification is material to TAM (PE-backed targeting, strategic-buyer
+  verticals, ABM where parent-record duplicates are a deal-breaker).
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name (output of `normalize_domain_and_name`).
+  - name: company_summary
+    type: string
+    required: true
+    description: >
+      Dense company summary (output of `company_summary_from_website`). Used
+      as grounding by the detection prompt so the AI doesn't re-fetch the
+      website. Required because grounded reasoning materially improves the
+      DBA-vs-acquisition disambiguation.
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for both AI steps. Defaults to gpt-5-mini per default policy (set 2026-05-01). Higher-stakes M&A reasoning may upgrade to
+      a stronger model — document overrides at the recipe level.
+
+outputs:
+  - name: is_acquired
+    type: boolean
+    nullable: true
+    description: >
+      The gate. True iff the AI returned `confirmed` or `likely` acquisition
+      AND `is_dba_rebrand=false`. False when no acquisition evidence found
+      OR when the case is a DBA / rebrand (e.g. Right Networks → Rightworks
+      is a rebrand, NOT an acquisition). Null on AI failure — caller treats
+      null as "not checked", NOT "fail-closed".
+  - name: acquisition_confidence
+    type: integer
+    nullable: true
+    description: 0-100. Maps the AI's confirmed/likely/none verdict to a numeric score (confirmed=85, likely=65, none=10) so callers can apply stricter thresholds when needed.
+  - name: acquirer_name
+    type: string
+    nullable: true
+    description: Canonical name of the acquiring / parent company (e.g. "HubSpot"). Null when `is_acquired=false`.
+  - name: acquirer_domain
+    type: string
+    nullable: true
+    description: Root domain of the acquiring company (e.g. "hubspot.com"). Null when `is_acquired=false`. Populated via the second-tier AI lookup so the value is verified, not just inferred.
+  - name: acquired_original_domain
+    type: string
+    nullable: true
+    description: The acquired company's original pre-acquisition domain (e.g. "simplivity.com" for SimpliVity → HPE), even when that domain now redirects. Null when `is_acquired=false`. Useful for downstream `acquired_brand_status` to do redirect-target matching.
+  - name: is_dba_rebrand
+    type: boolean
+    nullable: true
+    description: >
+      True when the AI judges the input represents a DBA name or a rebrand
+      (same legal entity, new name) rather than a true acquisition by a
+      different company. Used to suppress `is_acquired=true` for cases like
+      ClickUp dba Mango Technologies. Null on AI failure.
+  - name: new_product_page_url
+    type: string
+    nullable: true
+    description: >
+      When the acquired company has a dedicated landing page on the
+      acquirer's site (e.g. clari.com/products/groove/, paypal.com/us/braintree),
+      the full URL of that page. Null when the acquired-co domain redirects
+      to the acquirer's homepage (no dedicated page). Null when not acquired.
+  - name: canonical_company_name
+    type: string
+    description: >
+      Always populated. For `is_acquired=true` non-DBA: the acquired company's
+      brand name. For `is_acquired=false`: the input company name (or the
+      AI-cleaned "DBA official name" when the input was a DBA). This is the
+      name a downstream CRM record should use for routing.
+  - name: canonical_company_domain
+    type: string
+    description: >
+      Always populated. For `is_acquired=true` non-DBA: the acquired
+      company's original domain (or the input domain when original lookup
+      fails). For `is_acquired=false`: the input domain.
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: Concatenated reasoning from the AI steps. For human review and trace lookup.
+  - name: verification_signals
+    type: object
+    description: >
+      Full audit trail: { detection_and_analysis: {ran, ma_outcome,
+      is_acquired_raw, acquirer_name, acquired_company_name, is_dba_rebrand,
+      company_domain_match_confidence, reasoning, error},
+      acquirer_and_original_domain: {ran, acquirer_domain,
+      acquired_original_domain, new_product_page_url, reasoning, error} }.
+
+providers:
+  - name: deeplineagent
+    role: Both AI steps. Web search + structured-output reasoning. Replaces Clay's chained gpt-4o + clay-neon calls.
+
+ai_calls:
+  - tier: detection_and_analysis
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 3500
+    runs_when: always
+  - tier: acquirer_and_original_domain
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 1500
+    runs_when: detection_and_analysis.is_acquired === true
+estimated_cost_usd: 0.008  # detection always; second-tier lookup only on acquired rows
+
+invariants:
+  - The function makes one AI call on every row (the detection+analysis step). The acquirer + original-domain lookup runs ONLY when the first step flagged `is_acquired=true` — non-acquired rows pay only the first call's cost.
+  - DBA / rebrand cases are NOT flagged as acquired. ClickUp dba Mango Technologies, Right Networks → Rightworks rebrand both return `is_acquired=false` with `is_dba_rebrand=true` for traceability.
+  - AI step failure → outputs default to null, NOT false. `is_acquired=null` means "not checked"; caller must distinguish from `is_acquired=false`.
+  - Default-to-not-acquired on AI uncertainty. False positives (incorrectly flagging an independent company as acquired) drop legitimate prospects from downstream enrichment; false negatives (missing an acquisition) cost a duplicate-enrichment downstream but don't drop a real customer. We err on keeping records in the independent branch.
+  - `canonical_company_name` and `canonical_company_domain` are ALWAYS populated, regardless of branch. Callers can bind to these without conditional logic.
+  - The function makes no claim about the acquired company's CURRENT operational status (still independently operating vs. fully absorbed). That's `acquired_brand_status`'s job — chain it after this one when you need that signal.
+
+clay_origin:
+  exported_at: 2026-05-01
+  port_notes: >
+    Clay table is 47 columns. Five GPT-4o action calls in the source:
+    Company-Domain Match (confidence categorization), M&A Detection
+    (confirmed/likely/none verdict), M&A Analysis (extract acquirer +
+    acquired), Acquired Company's Original Domain (clay-neon model),
+    DBA Analysis (rebrand vs. acquisition), Acquiring Company Domain
+    Search, New URL Location, New URL, Domain Extraction. Plus dozens
+    of formula and normalize-action columns that are in-Clay plumbing.
+    We collapse the source's chained-string-output model into TWO
+    structured-JSON deeplineagent calls:
+    - Tier 1 (detection_and_analysis) FOLDS Company-Domain Match +
+      M&A Detection + M&A Analysis + DBA Analysis into one prompt.
+      The original Clay chain serially passed text outputs between
+      four AI calls; one structured-output call avoids three rounds of
+      context-shedding and saves ~3 calls per row.
+    - Tier 2 (acquirer_and_original_domain) FOLDS Acquiring Company
+      Domain Search + Acquired Company's Original Domain + New URL
+      Location + New URL + Domain Extraction into one prompt that
+      runs only when tier 1 confirmed acquisition. The Clay table ran
+      these unconditionally; gating on is_acquired=true cuts cost for
+      non-acquired rows (the common case).
+    Models bumped from Clay's gpt-4o + clay-neon mix to a consistent
+    gpt-5-mini per default (2026-05-01).
+    Clay's normalize-domain and normalize-name actions are dropped —
+    the function expects already-normalized inputs (output of
+    `normalize_domain_and_name`).
+    Clay's downstream "write to other table" action is recipe-level,
+    not function-level — a calling recipe binds outputs into its own
+    CRM writeback step.
+
+related:
+  - upstream: normalize_domain_and_name → verify_domain_alive → company_summary_from_website
+  - downstream: acquired_brand_status (gated on `is_acquired=true`); classify_via_latitude (gated on independent branch when M&A-strict pattern is used)
+  - planned_extension: detect_corporate_structure (covers parent-child relationships WITHOUT an acquisition event — subsidiaries, divisions, brand portfolios; not callable today)
+  - playbook: skills/ma-and-corporate-structure-playbook

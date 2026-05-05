@@ -1,0 +1,87 @@
+// commands.jsonc — detect_acquisition @ 1.0.0
+//
+// Ported from Clay table "(f) Check Acquisition Status + Verify Company Name"
+//   (production Clay workspace, <table-id-redacted>, exported 2026-05-01,
+//    parent-child relationships + M&A workflow).
+//
+// Pipeline shape:
+//   1. detection_and_analysis        — AI: combined detection + acquirer/acquired
+//                                       extraction + DBA disambiguation. Always runs.
+//   2. acquirer_and_original_domain  — AI: acquirer root domain + acquired-co
+//                                       original domain + new product page URL.
+//                                       Runs ONLY when tier 1 said is_acquired=true.
+//   3. compose_output                — JS: aggregate into the function's declared
+//                                       outputs. Default-to-not-acquired on AI failure.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean         required
+//   row.input.company_name_clean   required
+//   row.input.company_summary      required
+//   row.input.ai_model             optional (default openai/gpt-5-mini)
+
+{
+  "commands": [
+    {
+      "alias": "detection_and_analysis",
+      "description": "Combined M&A detection + analysis + DBA disambiguation. Folds Clay's Company-Domain Match + M&A Detection + M&A Analysis + DBA Analysis into one structured-output call. The agent uses web research to look for definitive acquisition language (acquired, purchased, merged with, became a subsidiary, is part of, redirects to acquirer) and extracts the acquirer + acquired-company names when found. Distinguishes a true acquisition from a DBA / rebrand (e.g. ClickUp dba Mango Technologies should NOT be flagged as acquired).",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a data-cleaning and M&A (mergers and acquisitions) analysis expert. Your job is to determine whether a company has been acquired by or merged with another company, identify the acquirer + acquired entity when so, and distinguish a true acquisition from a DBA / rebrand.\n\nDEFINITIONS\n- ACQUISITION: Company A was bought by, merged with, or became a subsidiary of a structurally different company B. Look for definitive language such as 'acquired', 'purchased', 'merged with', 'became a subsidiary', 'is part of', or explicit redirects to the acquirer's site.\n- DBA / REBRAND: A single legal entity operating under a brand name OR a brand name change with no change of ownership. Examples: ClickUp dba Mango Technologies (same legal entity, brand differs from legal name) — NOT acquired. Right Networks rebranded to Rightworks (same entity renamed) — NOT acquired. Distinguish carefully: a DBA / rebrand is NOT an acquisition.\n- COMPANY-DOMAIN MATCH: A confidence score for whether the supplied company name and domain belong to the same organization. Categories: very_high, high, medium, low, different.\n\nEVALUATION\n1. Use web research (search engine + the supplied company summary) to look for acquisition signals.\n2. Read carefully — a press release saying 'X was acquired by Y' is acquisition evidence; a Wikipedia line saying 'X dba Y' is NOT.\n3. Consider domain-redirect signals: if {{domain_clean}} 301-redirects to a different company's site, that is strong acquisition evidence.\n4. If acquisition is confirmed or likely: extract the acquirer (parent / acquiring company) name and the acquired company name. Use the most commonly used brand name (not the full legal name unless that's how the company is referenced).\n5. Decide canonical_company_name + canonical_company_domain:\n   - If acquired (non-DBA): canonical_company_name = the acquired company's primary brand name. canonical_company_domain = the input domain.\n   - If DBA / rebrand: canonical_company_name = the primary brand name (often the rebranded name, e.g. Rightworks not Right Networks). canonical_company_domain = the input domain.\n   - If not acquired: canonical_company_name = input company name. canonical_company_domain = input domain.\n\nVERDICT GUIDELINES\n- ma_outcome=confirmed → set is_acquired=true (unless is_dba_rebrand=true overrides)\n- ma_outcome=likely → set is_acquired=true (unless is_dba_rebrand=true)\n- ma_outcome=none → set is_acquired=false\n- is_dba_rebrand=true → ALWAYS overrides is_acquired to false (a rebrand is not an acquisition)\n\nDEFAULT-TO-NOT-ACQUIRED on uncertainty: when evidence is mixed or weak, prefer is_acquired=false. False positives (incorrectly flagging acquired) drop legitimate prospects from downstream enrichment; false negatives are cheaper.\n\nReturn ONLY valid JSON:\n{\n  ma_outcome: 'confirmed'|'likely'|'none',\n  is_acquired: <boolean>,\n  is_dba_rebrand: <boolean>,\n  acquirer_name: <string or null>,\n  acquired_company_name: <string or null>,\n  company_domain_match_confidence: 'very_high'|'high'|'medium'|'low'|'different',\n  canonical_company_name: <string>,\n  canonical_company_domain: <string>,\n  reasoning: <string — 2-4 sentences on the evidence and the verdict>\n}",
+        "prompt": "Company name: \"{{row.input.company_name_clean}}\"\nDomain: \"{{row.input.domain_clean}}\"\nCompany summary (grounding):\n\"{{row.input.company_summary}}\"\n\nResearch and return your verdict. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "ma_outcome": { "type": "string", "enum": ["confirmed", "likely", "none"] },
+            "is_acquired": { "type": "boolean" },
+            "is_dba_rebrand": { "type": "boolean" },
+            "acquirer_name": { "type": ["string", "null"] },
+            "acquired_company_name": { "type": ["string", "null"] },
+            "company_domain_match_confidence": { "type": "string", "enum": ["very_high", "high", "medium", "low", "different"] },
+            "canonical_company_name": { "type": "string" },
+            "canonical_company_domain": { "type": "string" },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["ma_outcome", "is_acquired", "is_dba_rebrand", "company_domain_match_confidence", "canonical_company_name", "canonical_company_domain", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "acquirer_and_original_domain",
+      "description": "Acquirer root domain + acquired-co original pre-acquisition domain + new product page URL. Folds Clay's Acquiring Company Domain Search + Acquired Company's Original Domain + New URL Location + New URL + Domain Extraction into one structured call. ONLY runs when tier 1 confirmed acquisition.",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean(row.detection_and_analysis && row.detection_and_analysis.result && row.detection_and_analysis.result.object && row.detection_and_analysis.result.object.is_acquired === true)",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a research assistant locating three pieces of acquisition metadata for a confirmed acquisition.\n\nINPUTS: acquirer_name (the parent / acquiring company), acquired_company_name (the company that was acquired).\n\nTASK 1 — acquirer_domain: Find the root domain of the acquirer. Examples: 'HubSpot' → 'hubspot.com'; 'Salesforce' → 'salesforce.com'. Return only the bare root domain (no protocol, no path). Verify by checking that the domain belongs to the acquirer (e.g. via the acquirer's About page, LinkedIn company page, or Wikipedia infobox). If you cannot find a verified domain, return null.\n\nTASK 2 — acquired_original_domain: Find the original pre-acquisition domain of the acquired company. The domain may now redirect or be repurposed. Examples: 'SimpliVity' (acquired by HPE) → 'simplivity.com'; 'Clearbit' (acquired by HubSpot) → 'clearbit.com'. Look at news articles, press releases, the Wayback Machine, the company's old LinkedIn or website snapshots. Return only the bare root domain. If you cannot determine the original domain with confidence, return null.\n\nTASK 3 — new_product_page_url: Determine where the acquired company's online presence now lives under the acquirer. Two possibilities:\n  (a) DEDICATED PAGE: a product page on the acquirer's site that specifically markets the acquired brand (e.g. https://www.clari.com/products/groove/, https://www.paypal.com/us/braintree). Return the full URL.\n  (b) HOMEPAGE REDIRECT: the acquired domain redirects to the acquirer's homepage with no dedicated page. Return null.\nReturn the URL ONLY if a dedicated page exists. Generic homepage redirects → null.\n\nReturn ONLY valid JSON:\n{\n  acquirer_domain: <string or null>,\n  acquired_original_domain: <string or null>,\n  new_product_page_url: <string or null>,\n  reasoning: <string — 1-3 sentences on what you found>\n}",
+        "prompt": "acquirer_name: \"{{detection_and_analysis.result.object.acquirer_name}}\"\nacquired_company_name: \"{{detection_and_analysis.result.object.acquired_company_name}}\"\ninput_domain (the acquired company's current domain — may already be the original): \"{{row.input.domain_clean}}\"\n\nResearch and return your findings. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "acquirer_domain": { "type": ["string", "null"] },
+            "acquired_original_domain": { "type": ["string", "null"] },
+            "new_product_page_url": { "type": ["string", "null"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["acquirer_domain", "acquired_original_domain", "new_product_page_url", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate AI step results into the declared output contract. Default-to-not-acquired on AI failure. Confidence mapping: confirmed=85, likely=65, none=10. Always emits canonical_company_name + canonical_company_domain.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const t1 = row.detection_and_analysis && row.detection_and_analysis.result && row.detection_and_analysis.result.object; const t2 = row.acquirer_and_original_domain && row.acquirer_and_original_domain.result && row.acquirer_and_original_domain.result.object; const t1Err = row.detection_and_analysis && row.detection_and_analysis.result && row.detection_and_analysis.result.error; const t2Err = row.acquirer_and_original_domain && row.acquirer_and_original_domain.result && row.acquirer_and_original_domain.result.error; const inputDomain = (row.input && row.input.domain_clean) || row['domain_clean'] || null; const inputName = (row.input && row.input.company_name_clean) || row['company_name_clean'] || null; let is_acquired = null; let acquisition_confidence = null; let is_dba_rebrand = null; let acquirer_name = null; let acquirer_domain = null; let acquired_original_domain = null; let new_product_page_url = null; let canonical_company_name = inputName; let canonical_company_domain = inputDomain; if (t1) { is_acquired = t1.is_acquired === true; if (t1.is_dba_rebrand === true) is_acquired = false; is_dba_rebrand = (t1.is_dba_rebrand === true); const outcomeMap = { 'confirmed': 85, 'likely': 65, 'none': 10 }; acquisition_confidence = outcomeMap[t1.ma_outcome] != null ? outcomeMap[t1.ma_outcome] : null; canonical_company_name = t1.canonical_company_name || inputName; canonical_company_domain = t1.canonical_company_domain || inputDomain; if (is_acquired) { acquirer_name = t1.acquirer_name || null; } } if (is_acquired && t2) { acquirer_domain = t2.acquirer_domain || null; acquired_original_domain = t2.acquired_original_domain || null; new_product_page_url = t2.new_product_page_url || null; } const reasoningParts = []; if (t1 && t1.reasoning) reasoningParts.push('Detection: ' + t1.reasoning); if (t2 && t2.reasoning) reasoningParts.push('Acquirer/domain: ' + t2.reasoning); return { is_acquired: is_acquired, acquisition_confidence: acquisition_confidence, acquirer_name: acquirer_name, acquirer_domain: acquirer_domain, acquired_original_domain: acquired_original_domain, is_dba_rebrand: is_dba_rebrand, new_product_page_url: new_product_page_url, canonical_company_name: canonical_company_name, canonical_company_domain: canonical_company_domain, ai_reasoning: reasoningParts.length ? reasoningParts.join(' || ') : null, verification_signals: { detection_and_analysis: { ran: !!t1, ma_outcome: t1 ? t1.ma_outcome : null, is_acquired_raw: t1 ? t1.is_acquired : null, acquirer_name: t1 ? t1.acquirer_name : null, acquired_company_name: t1 ? t1.acquired_company_name : null, is_dba_rebrand: t1 ? t1.is_dba_rebrand : null, company_domain_match_confidence: t1 ? t1.company_domain_match_confidence : null, reasoning: t1 ? t1.reasoning : null, error: t1Err || null }, acquirer_and_original_domain: { ran: !!t2, acquirer_domain: t2 ? t2.acquirer_domain : null, acquired_original_domain: t2 ? t2.acquired_original_domain : null, new_product_page_url: t2 ? t2.new_product_page_url : null, reasoning: t2 ? t2.reasoning : null, error: t2Err || null } } };"
+      }
+    }
+  ]
+}

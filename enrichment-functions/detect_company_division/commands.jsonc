@@ -1,0 +1,57 @@
+// commands.jsonc — detect_company_division @ 1.0.0
+//
+// Net-new agency function (no Clay table source). Grounded in the
+// M&A and Corporate Structure Playbook (the M&A and Corporate Structure Playbook).
+//
+// Pipeline shape:
+//   1. detect_division   — AI: web research + structured-output verdict.
+//   2. compose_output    — JS: pass through with default-to-not-a-division
+//                          on AI failure / low confidence.
+//
+// Input shape (when called as a sub-workflow):
+//   row.input.domain_clean         required
+//   row.input.company_name_clean   required
+//   row.input.company_summary      required
+//   row.input.ai_model             optional (default openai/gpt-5-mini)
+
+{
+  "commands": [
+    {
+      "alias": "detect_division",
+      "description": "Single-tier AI division detection. Distinguishes regional / business-unit branches of the SAME legal entity from independent companies AND from subsidiaries (which are different legal entities — handled by detect_corporate_structure).",
+      "operation": "deeplineagent",
+      "tool": "deeplineagent",
+      "run_if_js": "Boolean((row.input && row.input.domain_clean) || row['domain_clean'])",
+      "payload": {
+        "model": "{{row.input.ai_model}}",
+        "system": "You are a corporate-structure analysis expert. Your job is to determine, for a given input company, whether it represents a regional or business-unit DIVISION of a larger global company.\n\nDEFINITIONS\n\n- DIVISION: a regional or functional branch of a global company that is part of the SAME LEGAL ENTITY as the global parent. Two sub-types:\n  - regional: a geographic branch (e.g. H&M UK, H&M Australia, Under Armour Asia). The branch's staff are employees of the global parent's legal entity, just located in that region.\n  - business_unit: a functional or product-area branch within a conglomerate that has its own brand identity (e.g. Microsoft Gaming, Microsoft Cloud and AI, Microsoft Office). The BU's staff are employees of the parent's legal entity (Microsoft Corporation), just assigned to that BU.\n\n- NOT A DIVISION: the input is its own legal entity, OR is owned by a parent as a separate legal entity (that's `detect_corporate_structure`'s scope, not this function's), OR is itself the global parent.\n\nCRITICAL DISCRIMINATOR — same vs different legal entity\n\nThis is the central judgment call. Examples:\n\n- H&M UK is a DIVISION (regional). The UK arm's staff are H&M Hennes & Mauritz AB employees. hm.co.uk is the same legal entity's regional site.\n- Outback Steakhouse is NOT a division. It's owned by Bloomin' Brands as a SEPARATE LEGAL ENTITY. Outback Steakhouse, Inc. is its own corporation; Outback's staff are Outback employees, not Bloomin' employees. (`detect_corporate_structure` handles this case.)\n- Microsoft Gaming is a DIVISION (business_unit). Xbox + Activision are now folded into Microsoft Gaming, but the Microsoft Gaming staff are Microsoft Corporation employees, just assigned to the Gaming BU.\n- Activision Blizzard pre-acquisition was NOT a division — it was a separate legal entity. Post-acquisition (2023), it's been folded into Microsoft Gaming and Activision-Blizzard-as-separate-legal-entity is being dissolved over time. Verdict can vary by time of evaluation; default to current state.\n\nHOW TO DECIDE\n\n1. Look for the global parent. Does the input domain (e.g. hm.co.uk) appear to be a regional or BU site of a larger global brand? Look for:\n   - Country-code TLD pattern when the parent has the .com (hm.com → hm.co.uk).\n   - Header/footer copy: 'H&M UK', 'Microsoft Gaming Division', 'Welcome to [Brand] Australia'.\n   - LinkedIn affiliated companies / showcase pages link.\n   - Same product line and branding as the global parent.\n2. Check if the staff are employees of the global parent OR of a separate legal entity. This is the determining factor:\n   - If staff LinkedIn profiles say 'Company: Microsoft' (with division noted as 'Department: Gaming'), it's a DIVISION.\n   - If staff LinkedIn profiles say 'Company: Outback Steakhouse, Inc.' (NOT 'Company: Bloomin' Brands'), it's NOT a division — it's a subsidiary as a separate legal entity.\n3. Check Wikipedia / corporate filings: the legal entity name. If the input's legal entity matches the global parent's, it's a division. If different, it's not.\n\nIDENTIFY DIVISION SCOPE\n\nFor regional divisions: emit the country or region (e.g. 'United Kingdom', 'Australia', 'Asia-Pacific'). Use the most specific scope evidence supports.\nFor business_unit divisions: emit the BU name (e.g. 'Gaming', 'Cloud and AI', 'Office Productivity'). Use the company's own naming for the BU.\n\nDEFAULT-TO-NOT-A-DIVISION on uncertainty. False positives (incorrectly tagging an independent company as a division of some other company) corrupt CRM routing. When evidence is weak or mixed, prefer is_division=false.\n\nReturn ONLY valid JSON:\n{\n  is_division: <boolean>,\n  division_type: 'regional'|'business_unit'|null,\n  global_parent_name: <string or null>,\n  global_parent_domain: <string or null>,\n  division_scope: <string or null>,\n  confidence: <integer 0-100>,\n  evidence_signals: <array of strings — specific signals you relied on>,\n  reasoning: <string — 2-4 sentences on the verdict>\n}",
+        "prompt": "Company name: \"{{row.input.company_name_clean}}\"\nDomain: \"{{row.input.domain_clean}}\"\nCompany summary (grounding):\n\"{{row.input.company_summary}}\"\n\nResearch whether this represents a regional or business-unit division of a larger global company. Return only valid JSON.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "is_division": { "type": "boolean" },
+            "division_type": { "type": ["string", "null"], "enum": ["regional", "business_unit", null] },
+            "global_parent_name": { "type": ["string", "null"] },
+            "global_parent_domain": { "type": ["string", "null"] },
+            "division_scope": { "type": ["string", "null"] },
+            "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "evidence_signals": { "type": "array", "items": { "type": "string" } },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["is_division", "confidence", "evidence_signals", "reasoning"],
+          "additionalProperties": false
+        }
+      }
+    },
+
+    {
+      "alias": "compose_output",
+      "description": "Aggregate AI output into the function's declared outputs. Default-to-not-a-division on AI failure. division_type / global_parent_* are nulled when is_division=false.",
+      "operation": "run_javascript",
+      "tool": "run_javascript",
+      "payload": {
+        "code": "const t = row.detect_division && row.detect_division.result && row.detect_division.result.object; const tErr = row.detect_division && row.detect_division.result && row.detect_division.result.error; if (!t) { return { is_division: null, division_type: null, global_parent_name: null, global_parent_domain: null, division_scope: null, confidence: null, ai_reasoning: tErr ? ('AI step failed: ' + tErr) : 'AI step did not run', verification_signals: { ai: { ran: false, error: tErr || 'no AI output' } } }; } const isDiv = t.is_division === true; return { is_division: isDiv, division_type: isDiv ? (t.division_type || null) : null, global_parent_name: isDiv ? (t.global_parent_name || null) : null, global_parent_domain: isDiv ? (t.global_parent_domain || null) : null, division_scope: isDiv ? (t.division_scope || null) : null, confidence: typeof t.confidence === 'number' ? t.confidence : null, ai_reasoning: t.reasoning || null, verification_signals: { ai: { ran: true, raw_verdict: isDiv, confidence: t.confidence, evidence_signals: Array.isArray(t.evidence_signals) ? t.evidence_signals : null, reasoning: t.reasoning, error: null } } };"
+      }
+    }
+  ]
+}

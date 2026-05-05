@@ -1,0 +1,133 @@
+name: detect_company_division
+version: 1.0.0
+status: ported_from_clay  # Net new design grounded in playbook examples; no Clay table source.
+description: >
+  Detect whether a company record represents a regional or business-unit
+  branch of a larger global brand — the SAME legal entity, just a branch.
+  Distinct from `detect_corporate_structure` (which covers DIFFERENT legal
+  entities owned by a parent — Outback ≠ Bloomin'). A division IS the
+  parent legally; just a branch with its own regional or BU leadership.
+  Targets geographic divisions of global brands (H&M UK / H&M Australia /
+  H&M Global, Under Armour regional arms), business-unit divisions of
+  conglomerates with their own brand identity (Microsoft Gaming / Cloud /
+  Office), and country-domain regional sites that ARE real branches
+  (hm.co.uk is a real UK branch with UK staff; underarmour.co.uk may be
+  marketing-only — `country_presence_verified` validates the latter, this
+  function adds identity).
+  Single-tier AI pipeline: one deeplineagent call that uses web research
+  to determine whether the input is a division and, if so, the global
+  parent's name + domain + the division's scope (country or BU name).
+
+inputs:
+  - name: domain_clean
+    type: string
+    required: true
+    description: Normalized root domain (output of `normalize_domain_and_name`).
+  - name: company_name_clean
+    type: string
+    required: true
+    description: Normalized company name (output of `normalize_domain_and_name`).
+  - name: company_summary
+    type: string
+    required: true
+    description: >
+      Dense company summary (output of `company_summary_from_website`). Used
+      as grounding so the AI doesn't have to re-fetch the website and can
+      ground its division-detection judgment in the company's own marketing
+      language ("H&M UK", "Microsoft Gaming Division", etc.).
+  - name: ai_model
+    type: string
+    required: false
+    default: openai/gpt-5-mini
+    description: >
+      Model for the AI step. Defaults to gpt-5-mini per default policy (set 2026-05-01).
+
+outputs:
+  - name: is_division
+    type: boolean
+    nullable: true
+    description: >
+      The gate. True iff the input represents a division of a larger global
+      company (same legal entity, regional or BU branch). False when the
+      input is its own legal entity. Null on AI failure.
+  - name: division_type
+    type: string
+    nullable: true
+    description: >
+      Enum: `regional` | `business_unit` | null. Distinguishes geographic
+      divisions (H&M UK, Under Armour Asia) from functional / business-unit
+      divisions (Microsoft Gaming, Microsoft Cloud + AI). Null when not a
+      division OR when type is unclear from evidence.
+  - name: global_parent_name
+    type: string
+    nullable: true
+    description: >
+      Canonical name of the global parent brand (e.g. "H&M" for H&M UK;
+      "Microsoft" for Microsoft Gaming). Null when not a division.
+  - name: global_parent_domain
+    type: string
+    nullable: true
+    description: >
+      Root domain of the global parent (e.g. "hm.com" for H&M UK;
+      "microsoft.com" for Microsoft Gaming). Null when not a division.
+  - name: division_scope
+    type: string
+    nullable: true
+    description: >
+      For regional: the country or region (e.g. "United Kingdom",
+      "Australia", "Asia-Pacific"). For business_unit: the function or
+      product area (e.g. "Gaming", "Cloud and AI"). Null when not a
+      division.
+  - name: confidence
+    type: integer
+    nullable: true
+    description: 0-100. AI's self-graded confidence in its verdict. Below 50 should be treated as effectively "uncertain — default to not-a-division".
+  - name: ai_reasoning
+    type: string
+    nullable: true
+    description: Full AI reasoning. For human review and trace lookup.
+  - name: verification_signals
+    type: object
+    description: >
+      Audit trail: { ai: {ran, raw_verdict, confidence, evidence_signals,
+      reasoning, error} }.
+
+providers:
+  - name: deeplineagent
+    role: One AI call with structured output. Web search + structured-output reasoning.
+
+ai_calls:
+  - tier: division_detection
+    primitive: deeplineagent
+    model: openai/gpt-5-mini
+    estimated_tokens: 2500
+    runs_when: always
+estimated_cost_usd: 0.004
+
+invariants:
+  - One AI call per row. Cost predictable.
+  - Default-to-not-a-division on AI uncertainty. Same bias rationale as `detect_corporate_structure` — false positives (incorrectly tagging an independent company as a division) corrupt CRM routing.
+  - DOES NOT detect parent-child across DIFFERENT legal entities. Outback owned by Bloomin' Brands is `is_division=false` here (different legal entities). For corporate-structure detection, use `detect_corporate_structure`.
+  - DOES NOT detect M&A events. A division of a company that was itself acquired (e.g. Slack Asia post-Salesforce-acquisition) emits the division signal here AND coexists with whatever `detect_acquisition` says about Slack itself.
+  - Key discriminator from `detect_corporate_structure`: SAME LEGAL ENTITY. H&M UK's UK staff are H&M Hennes & Mauritz AB employees. Outback's staff are Outback Steakhouse, Inc. employees (a separate legal entity from Bloomin' Brands). This function MUST accurately distinguish those cases or it overlaps wastefully with `detect_corporate_structure`.
+
+clay_origin:
+  source: design-doc
+  exported_at: 2026-05-04
+  port_notes: >
+    Net-new agency function with no Clay table to port verbatim from.
+    Design grounded in the M&A and Corporate Structure Playbook skill's
+    worked examples (H&M UK / Australia / Global; Under Armour regional
+    arms; Microsoft Gaming / Cloud / Office BUs). Output shape mirrors
+    `detect_acquisition` and `detect_corporate_structure` for consistency,
+    with `is_division` + `division_type` replacing `is_acquired` /
+    `relationship_type` as the gate.
+    The CRITICAL boundary with `detect_corporate_structure` is "same vs
+    different legal entity" — see the system prompt for the explicit
+    discrimination logic.
+
+related:
+  - upstream: normalize_domain_and_name → company_summary_from_website
+  - downstream: classify_via_latitude (gated when `is_division=true` and your strict mode wants to enrich the global parent record instead of the divisional record)
+  - composes_with: detect_acquisition (M&A); detect_corporate_structure (parent-child across legal entities); country_presence_verified (validates the divisional record has real in-country staff)
+  - playbook: skills/ma-and-corporate-structure-playbook
