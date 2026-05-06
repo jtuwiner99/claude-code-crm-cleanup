@@ -48,6 +48,20 @@ Two scoring paths exist in this repo and they're not interchangeable:
 
 The /crm-cleanup skill defaults to the deterministic path (cheap + fast for the demo flow); the Latitude path is referenced as a "Pro upgrade path" in [.claude/skills/crm-cleanup/SKILL.md](.claude/skills/crm-cleanup/SKILL.md).
 
+## Contact-cleanup demo pipeline (validated 2026-05-06)
+
+The account spine has a parallel for contacts at [recipes/contact-cleanup-template.jsonc](recipes/contact-cleanup-template.jsonc) + [tmp/sample-contacts.csv](tmp/sample-contacts.csv) (15 prominent-CEO sample rows including 3 known-moved execs for testing the still-there detection path). Pipeline collapses the canonical six-function spine ([.claude/skills/contact-cleanup-playbook/SKILL.md](.claude/skills/contact-cleanup-playbook/SKILL.md)) into 8 inline steps: `inputs → prospeo_url → agent_url → resolved → harvest → harvest_fields → classify → verdict`. ~$0.55/15 rows, ~5 min runtime.
+
+Key validated learnings (preserved verbatim in the recipe header for cross-session reference):
+
+- **Prospeo coverage is variable** — ~30–50% NO_MATCH on high-profile CEOs in the validation cohort. Worse, when Prospeo *does* return a URL, it can be an imposter / suffix-form profile (e.g. `linkedin.com/in/satya-nadella-94baa5341`) that 404s on Harvest. The `resolved` step always prefers agent (web-search-verified) URLs over Prospeo's index URLs.
+- **deeplineagent web search is non-deterministic** — same `find LinkedIn URL for X` query can succeed on one run and return null on the next. For demo runs, accept ~5–10% URL-discovery noise. For production, add a confidence-check + retry-on-null wrapper.
+- **The harvest_fields extraction step is load-bearing.** Without it, classify's prompt receives raw scraped blobs (companyLogo URLs, image dimensions, expiry timestamps) and the AI returns all-nulls due to noise. The step trims `currentPosition` to `{position, companyName, duration, startDate, endDate}` only — keeps the prompt tight.
+- **Multi-role exec edge case is real signal, not a bug.** Daniel Ek (Spotify CEO + Principal at Prima Materia) and Patrick Collison (Stripe CEO + Cofounder at Arc Institute) both came back `still_there=no` because LinkedIn's first current_position entry isn't always the on-record CRM company. CRM operators reviewing these should investigate manually before downgrading.
+- **Big-tech CEO emails aren't in Harvest's public-email index** — expect 0 emails with `find_email=true` for C-suite cohorts. The flag works better at Director/VP level.
+
+Identity verification works as advertised: Tim Cook caught as `identity=mismatch` because Prospeo returned a bogus URL for him (Apple's Tim Cook is famously not on public LinkedIn). This is the system *correctly* refusing to trust an unverified scrape — the right behavior even though the row "fails" classification.
+
 ## Phase-5 hosted-workflow promotion uses `--trigger api`, not cron
 
 Recorded in [.claude/skills/crm-cleanup/SKILL.md](.claude/skills/crm-cleanup/SKILL.md) Phase 5: `tools/promote_to_workflow.py` rejects cron triggers because the playbook is row-driven (per-row inputs from CSV). API trigger is the only sensible choice for a demo deploy; webhook needs CRM-side wiring beyond the demo's scope. Smoke test default: `--smoke-domain stripe.com --smoke-company-name Stripe` (known-clean, reproducible verdict).
@@ -55,5 +69,5 @@ Recorded in [.claude/skills/crm-cleanup/SKILL.md](.claude/skills/crm-cleanup/SKI
 ## Repo workflow conventions
 
 - Direct push to `main` is **blocked** by org policy ("Pushing directly to the default branch (main) bypasses pull request review"). Use feature branches + PRs. PR #1 set the precedent; subsequent merges follow the same flow.
-- `tmp/` is per-session — only `tmp/sample-accounts.csv` and `tmp/golden-accounts.csv` are committed; everything else is gitignored. After demo iterations, clear `tmp/` (keep the two committed inputs).
+- `tmp/` is per-session — only `tmp/sample-accounts.csv`, `tmp/golden-accounts.csv`, and `tmp/sample-contacts.csv` are committed; everything else is gitignored. After demo iterations, clear `tmp/` (keep the three committed inputs).
 - HubSpot OAuth via `tools/install_hubspot.py` writes `tmp/hubspot-properties.csv` — that's user CRM data; gitignored, treat as scratch, clear post-session.

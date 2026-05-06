@@ -17,6 +17,10 @@ tmp/qa-report.md
 tmp/engagement-report.md
 tmp/scoring-model.json
 tmp/scored-accounts.csv
+tmp/contact-playbook.jsonc
+tmp/contact-playbook.compiled.jsonc
+tmp/contacts-enriched.csv
+tmp/contacts-enriched-flat.csv
 tmp/*.log
 tmp/playbooks/
 tmp/workflows/

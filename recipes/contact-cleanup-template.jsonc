@@ -1,0 +1,190 @@
+// recipes/contact-cleanup-template.jsonc
+//
+// Reference template for contact-side CRM cleanup. Copy to
+// tmp/contact-playbook.jsonc and run via:
+//   python3 tools/enrich.py tmp/sample-contacts.csv \
+//     --playbook tmp/contact-playbook.jsonc \
+//     --output tmp/contacts-enriched.csv
+//
+// Companion to recipes/default-cleanup-template.jsonc (the account spine).
+// Per .claude/skills/contact-cleanup-playbook/SKILL.md, the canonical
+// pipeline has six functions:
+//   find_contact_linkedin_url → enrich_contact_linkedin_profile
+//   → validate_contact_identity → detect_job_change
+//   → classify_multi_dim_via_latitude → score_contact_fit
+//
+// This template collapses validate+detect+classify+score into ONE
+// deeplineagent call (in the `classify` step) for compactness. Production
+// deployment per the skill would split these into separate Latitude-
+// managed steps with prompt versioning + dataset-driven regression.
+//
+// Pipeline (8 steps):
+//   1. inputs          — JS: normalize names + domain
+//   2. prospeo_url     — prospeo_enrich_person tier-1 LinkedIn URL discovery
+//   3. agent_url       — deeplineagent tier-2 web-research fallback
+//                        (always fires — per CLAUDE.md "don't use run_if_js gates")
+//   4. resolved        — JS: PREFER agent URL (web-search-verified) over
+//                        prospeo's index URL; URL-encode for Harvest
+//   5. harvest         — generic_http_request: Harvest /linkedin/profile?url=...
+//                        with find_email=true (mostly nulls for big-tech CEOs)
+//   6. harvest_fields  — JS: extract scraped name/headline/current_position with
+//                        safe defaults so classify templates resolve even on
+//                        rows where Harvest returned no element. CRITICAL —
+//                        without this step, `--with-force` validation fails when
+//                        the first sample row has no Harvest element.
+//   7. classify        — deeplineagent: identity+still_there+persona+seniority
+//                        in one structured-JSON call. Strips noisy fields out
+//                        of currentPosition (logo URLs, image dimensions) via
+//                        the harvest_fields trim — sending raw scrape blobs
+//                        bloats the prompt and the AI returns all-nulls.
+//   8. verdict         — JS: compose flat output (scoring rules baked in)
+//
+// Validated 2026-05-06 against 15 prominent-CEO sample contacts at
+// tmp/sample-contacts.csv. Notable quirks observed:
+//
+//   - Prospeo coverage is variable (~30-50% NO_MATCH on high-profile CEOs).
+//     Agent tier-2 picks up the rest. ALWAYS PREFER agent URL when both
+//     exist — Prospeo can return imposter / suffix-style URLs (e.g.
+//     "satya-nadella-94baa5341") that 404 on Harvest. Verified URLs from
+//     web search via Serper/Exa are more reliable.
+//   - deeplineagent web search is non-deterministic; same query can return
+//     a URL on one run and null on the next. Acceptable for demo; for
+//     production add a confidence-check step + retry on null.
+//   - Multi-role execs (founders with concurrent positions) often surface
+//     `still_there=no` because LinkedIn's first current_position entry is
+//     the most-recent / most-prominent role, not the on-record CRM company.
+//     Saw this on Daniel Ek (LinkedIn shows Prima Materia, on-record was
+//     Spotify) and Patrick Collison (Arc Institute vs Stripe). REAL signal
+//     for CRM operators — investigate manually before downgrading the row.
+//   - Big-tech CEO emails are NOT in Harvest's public-email index — expect
+//     0 emails for C-suite cohorts. The find_email=true flag works better
+//     on Director/VP-level contacts.
+//
+// Scoring rules (baked into verdict step — override per project):
+//   - target_personas: executive | sales | revenue_operations | marketing
+//   - seniority_floor: director (=3 in the ladder)
+//   - identity_match=mismatch → not_ideal regardless of other axes
+//   - still_there=yes + persona match + seniority >= floor → ideal
+//   - still_there !=no AND (persona match OR seniority >= floor) → acceptable
+//   - else → not_ideal
+{
+  "version": 1,
+  "commands": [
+    // 1. inputs ---------------------------------------------------------
+    {
+      "alias": "inputs",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "const fn = String(row.first_name || '').trim(); const ln = String(row.last_name || '').trim(); const co = String(row.company_name || '').trim(); const dom = String(row.domain || '').toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].split('?')[0].trim() || null; const title = String(row.job_title || '').trim(); return { first_name: fn, last_name: ln, full_name: (fn + ' ' + ln).trim(), company_name_clean: co, domain_clean: dom, job_title: title };"
+      }
+    },
+
+    // 2. prospeo_url — tier 1 LinkedIn URL discovery --------------------
+    {
+      "alias": "prospeo_url",
+      "tool": "prospeo_enrich_person",
+      "operation": "prospeo_enrich_person",
+      "payload": {
+        "first_name": "{{inputs.first_name}}",
+        "last_name": "{{inputs.last_name}}",
+        "company_website": "{{inputs.domain_clean}}",
+        "company_name": "{{inputs.company_name_clean}}"
+      }
+    },
+
+    // 3. agent_url — tier 2 web-research fallback (always fires) --------
+    // Per CLAUDE.md gotcha: don't use run_if_js gates. Agent runs on every
+    // row; the merge step picks prospeo URL when found, agent URL otherwise.
+    {
+      "alias": "agent_url",
+      "tool": "deeplineagent",
+      "operation": "deeplineagent",
+      "payload": {
+        "model": "anthropic/claude-haiku-4.5",
+        "system": "You are a research agent that finds the canonical LinkedIn PROFILE page for a given person at a given company. Use web search when needed. The URL must contain 'linkedin.com/in/' (NOT 'linkedin.com/company/'). Return null when you cannot find a high-confidence match.",
+        "prompt": "Find the LinkedIn profile URL for:\n  Name: {{inputs.full_name}}\n  Company: {{inputs.company_name_clean}}\n  Domain: {{inputs.domain_clean}}\n  Title: {{inputs.job_title}}\n\nSearch for: \"{{inputs.full_name}} {{inputs.company_name_clean}} linkedin profile\". Return only the canonical linkedin.com/in/ URL or null if uncertain.",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "linkedin_url": { "type": ["string", "null"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["linkedin_url", "reasoning"]
+        }
+      }
+    },
+
+    // 4. resolved — JS: pick best URL + URL-encode for Harvest ----------
+    {
+      "alias": "resolved",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "function unwrap(x) { if (!x || typeof x !== 'object') return x; if ('result' in x && typeof x.result === 'object' && x.result !== null) return x.result; return x; } const p = unwrap(row.prospeo_url) || {}; const a = unwrap(row.agent_url) || {}; const pdata = p.data || {}; const aobj = a.object || {}; const noMatch = pdata.error_code === 'NO_MATCH' || pdata.error === true; const prospeoUrl = !noMatch ? (pdata.linkedin_url || (pdata.person && pdata.person.linkedin_url) || null) : null; const agentUrl = aobj.linkedin_url || null; const isValid = function(u) { return u && /linkedin\\.com\\/in\\//i.test(u); }; let url = null; let source = 'none'; if (isValid(agentUrl)) { url = agentUrl; source = 'agent_tier2'; } else if (isValid(prospeoUrl)) { url = prospeoUrl; source = 'prospeo_tier1'; } const encoded = url ? encodeURIComponent(url) : 'missing'; return { linkedin_url: url, linkedin_url_source: source, harvest_url: 'https://api.harvest-api.com/linkedin/profile?url=' + encoded + '&find_email=true' };"
+      }
+    },
+
+    // 5. harvest — Harvest /linkedin/profile scrape ---------------------
+    {
+      "alias": "harvest",
+      "tool": "generic_http_request",
+      "operation": "generic_http_request",
+      "payload": {
+        "method": "GET",
+        "url": "{{resolved.harvest_url}}",
+        "headers": {
+          "X-API-Key": "<HARVEST_API_KEY>",
+          "Content-Type": "application/json"
+        },
+        "timeout_ms": 30000
+      }
+    },
+
+    // 5b. harvest_fields — flatten harvest body into safe-default fields
+    // so classify's templates always resolve (even when harvest had no element).
+    {
+      "alias": "harvest_fields",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "function unwrap(x) { if (!x || typeof x !== 'object') return x; if ('result' in x && typeof x.result === 'object' && x.result !== null) return x.result; return x; } function trimPos(p) { if (!p) return null; return { position: p.position || null, companyName: p.companyName || null, duration: p.duration || null, endDate: (p.endDate && p.endDate.text) || null, startDate: (p.startDate && p.startDate.text) || null }; } const h = unwrap(row.harvest) || {}; const body = (h.data && typeof h.data === 'object') ? h.data : {}; const element = body.element || null; const cpRaw = element && Array.isArray(element.currentPosition) ? element.currentPosition[0] : (element && element.currentPosition) || null; const expRaw = element && Array.isArray(element.experience) ? element.experience.slice(0, 5) : []; const emails = element && Array.isArray(element.emails) ? element.emails : []; return { scraped_first_name: element ? String(element.firstName || '').trim() || null : null, scraped_last_name: element ? String(element.lastName || '').trim() || null : null, headline: element ? element.headline || null : null, current_position: JSON.stringify(trimPos(cpRaw)), top_experience: JSON.stringify(expRaw.map(trimPos)), email: emails.length ? emails[0] : null, has_element: !!element, harvest_error: body.error ? String(body.error) : null };"
+      }
+    },
+
+    // 6. classify — combined identity + still_there + persona + seniority
+    {
+      "alias": "classify",
+      "tool": "deeplineagent",
+      "operation": "deeplineagent",
+      "payload": {
+        "model": "anthropic/claude-haiku-4.5",
+        "system": "You are a deterministic CRM contact classifier. DO NOT call any tools. Use ONLY the input + scraped profile given. Reply with EXACTLY one JSON object — no prose.\n\nFour judgments per row:\n\n1. identity_match — Did we scrape the right person?\n   - confirmed: name matches AND on-record company appears in profile (current OR past role)\n   - weak: name matches but company evidence is thin\n   - mismatch: clear name OR company conflict (different person scraped)\n\n2. still_there — Is the person currently at the on-record company?\n   - yes: scraped current_position.company matches on-record company\n   - no: scraped current is a DIFFERENT company (they moved)\n   - unclear: profile lacks current position OR identity_match=mismatch\n\n3. persona — function bucket of CURRENT role (or on-record role if still_there):\n   executive | sales | revenue_operations | marketing | customer_success | product | engineering | finance | people_ops | other\n\n4. seniority — based on current title:\n   ic | senior_ic | manager | director | vp_or_head | c_level | founder\n   (CEO/CFO/COO/CTO/CRO → c_level; Founder/Co-founder → founder; VP → vp_or_head; Director → director; etc.)\n\nAlways set ALL fields. Use 'unclear' / 'other' / 'ic' as conservative defaults when evidence is thin.",
+        "prompt": "INPUT (CRM record):\n  Name: {{inputs.full_name}}\n  On-record company: {{inputs.company_name_clean}}\n  On-record title: {{inputs.job_title}}\n\nSCRAPED PROFILE (from Harvest — fields will be empty if the LinkedIn URL didn't resolve):\n  scraped_first_name: {{harvest_fields.scraped_first_name}}\n  scraped_last_name: {{harvest_fields.scraped_last_name}}\n  headline: {{harvest_fields.headline}}\n  current_position: {{harvest_fields.current_position}}\n  top_experience: {{harvest_fields.top_experience}}\n  has_element: {{harvest_fields.has_element}}\n\nIf has_element=false, set identity_match=mismatch, still_there=unclear, persona=other, seniority=ic — there's no profile data to judge from.\nReturn JSON: { identity_match, still_there, current_company, current_title, persona, seniority, reasoning }",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "identity_match": { "type": "string", "enum": ["confirmed", "weak", "mismatch"] },
+            "still_there": { "type": "string", "enum": ["yes", "no", "unclear"] },
+            "current_company": { "type": ["string", "null"] },
+            "current_title": { "type": ["string", "null"] },
+            "persona": { "type": "string", "enum": ["executive", "sales", "revenue_operations", "marketing", "customer_success", "product", "engineering", "finance", "people_ops", "other"] },
+            "seniority": { "type": "string", "enum": ["ic", "senior_ic", "manager", "director", "vp_or_head", "c_level", "founder"] },
+            "reasoning": { "type": "string" }
+          },
+          "required": ["identity_match", "still_there", "current_company", "current_title", "persona", "seniority", "reasoning"]
+        }
+      }
+    },
+
+    // 7. verdict — compose flat output row ------------------------------
+    {
+      "alias": "verdict",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "function unwrap(x) { if (!x || typeof x !== 'object') return x; if ('result' in x && typeof x.result === 'object' && x.result !== null) return x.result; return x; } const inputs = unwrap(row.inputs) || {}; const resolved = unwrap(row.resolved) || {}; const harvestResp = unwrap(row.harvest) || {}; const classifyResp = unwrap(row.classify) || {}; const linkedin_url = resolved.linkedin_url || null; const linkedin_url_source = resolved.linkedin_url_source || 'none'; const hbody = (harvestResp.data && typeof harvestResp.data === 'object') ? harvestResp.data : null; const hRateLimited = !!(hbody && hbody.error && /code_22/.test(String(hbody.error))); const element = (hbody && hbody.element) || null; const emails = (element && Array.isArray(element.emails)) ? element.emails : []; const email = emails.length ? emails[0] : null; const email_valid_format = email ? /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(email)) : null; const cls = classifyResp.object || {}; const identity_match = cls.identity_match || 'unclear'; const still_there = cls.still_there || 'unclear'; const persona = cls.persona || 'other'; const seniority = cls.seniority || 'ic'; const current_company = cls.current_company || null; const current_title = cls.current_title || null; const reasoning_cls = cls.reasoning || null; const target_personas = ['executive','sales','revenue_operations','marketing']; const seniority_ladder = {ic:0, senior_ic:1, manager:2, director:3, vp_or_head:4, c_level:5, founder:6}; const seniority_floor = 3; const persona_match = target_personas.indexOf(persona) >= 0; const seniority_ok = (seniority_ladder[seniority] || 0) >= seniority_floor; let score = 'not_ideal'; if (identity_match === 'mismatch') { score = 'not_ideal'; } else if (still_there === 'yes' && persona_match && seniority_ok) { score = 'ideal'; } else if (still_there !== 'no' && (persona_match || seniority_ok)) { score = 'acceptable'; } else { score = 'not_ideal'; } const reason_parts = []; if (!linkedin_url) reason_parts.push('No LinkedIn URL found by Prospeo or agent.'); if (linkedin_url && !element && !hRateLimited) reason_parts.push('Harvest returned no profile element.'); if (hRateLimited) reason_parts.push('Harvest rate-limited (code_22).'); if (reasoning_cls) reason_parts.push(reasoning_cls); const reasoning = reason_parts.length ? reason_parts.join(' ') : 'All fields populated.'; return { first_name: inputs.first_name, last_name: inputs.last_name, on_record_company: inputs.company_name_clean, on_record_title: inputs.job_title, linkedin_url: linkedin_url, linkedin_url_source: linkedin_url_source, identity_match: identity_match, still_there: still_there, current_company: current_company, current_title: current_title, persona: persona, seniority: seniority, score: score, email: email, email_valid_format: email_valid_format, reasoning: reasoning, harvest_rate_limited: hRateLimited };"
+      }
+    }
+  ]
+}
