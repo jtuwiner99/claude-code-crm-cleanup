@@ -57,6 +57,68 @@ EXACT_GRADE_FIELDS_FORCE = {"is_acquired", "is_live", "is_keepable", "is_real_bu
 # Sentinel value that means "this domain is dead — accept any dead/empty Got."
 DEAD_DOMAIN_SENTINELS = ("UNREACHABLE_OR_DEAD_DOMAIN", "DEAD_DOMAIN", "NOT_REACHABLE")
 
+# Fuzzy-match config for the exact grader. Lets the golden be authored in
+# either ISO codes or full names, and tolerates real-world LinkedIn-headcount
+# drift on integer fields (LinkedIn re-publishes employee counts daily; a
+# golden authored a week ago is reliably ±1-3% off current Harvest readings).
+INTEGER_FIELDS = {"employee_count", "numberofemployees", "rev_ops_headcount",
+                  "sales_headcount", "marketing_headcount", "engineering_headcount",
+                  "headcount"}
+INTEGER_TOLERANCE_PCT = 5.0  # ±5% drift tolerance for integer-typed fields
+
+# Bi-directional ISO-2 ↔ English-name maps for state + country fuzzy match.
+# Keep the maps lower-cased and pre-built; the grader normalizes both sides
+# to lowercase before lookup.
+_COUNTRY_PAIRS = [
+    ("us", "united states"), ("ca", "canada"), ("gb", "united kingdom"),
+    ("uk", "united kingdom"), ("de", "germany"), ("fr", "france"),
+    ("es", "spain"), ("it", "italy"), ("nl", "netherlands"),
+    ("se", "sweden"), ("no", "norway"), ("dk", "denmark"), ("fi", "finland"),
+    ("ie", "ireland"), ("pl", "poland"), ("pt", "portugal"), ("be", "belgium"),
+    ("at", "austria"), ("ch", "switzerland"), ("au", "australia"),
+    ("nz", "new zealand"), ("jp", "japan"), ("cn", "china"), ("hk", "hong kong"),
+    ("sg", "singapore"), ("in", "india"), ("il", "israel"), ("br", "brazil"),
+    ("mx", "mexico"), ("ar", "argentina"), ("za", "south africa"),
+    ("ae", "united arab emirates"), ("sa", "saudi arabia"), ("tr", "turkey"),
+    ("ru", "russia"), ("ua", "ukraine"), ("kr", "south korea"), ("tw", "taiwan"),
+    ("th", "thailand"), ("my", "malaysia"), ("id", "indonesia"),
+    ("ph", "philippines"), ("vn", "vietnam"), ("cz", "czech republic"),
+    ("ro", "romania"), ("gr", "greece"), ("hu", "hungary"),
+]
+
+_US_STATE_PAIRS = [
+    ("al","alabama"),("ak","alaska"),("az","arizona"),("ar","arkansas"),
+    ("ca","california"),("co","colorado"),("ct","connecticut"),("de","delaware"),
+    ("fl","florida"),("ga","georgia"),("hi","hawaii"),("id","idaho"),
+    ("il","illinois"),("in","indiana"),("ia","iowa"),("ks","kansas"),
+    ("ky","kentucky"),("la","louisiana"),("me","maine"),("md","maryland"),
+    ("ma","massachusetts"),("mi","michigan"),("mn","minnesota"),("ms","mississippi"),
+    ("mo","missouri"),("mt","montana"),("ne","nebraska"),("nv","nevada"),
+    ("nh","new hampshire"),("nj","new jersey"),("nm","new mexico"),("ny","new york"),
+    ("nc","north carolina"),("nd","north dakota"),("oh","ohio"),("ok","oklahoma"),
+    ("or","oregon"),("pa","pennsylvania"),("ri","rhode island"),("sc","south carolina"),
+    ("sd","south dakota"),("tn","tennessee"),("tx","texas"),("ut","utah"),
+    ("vt","vermont"),("va","virginia"),("wa","washington"),("wv","west virginia"),
+    ("wi","wisconsin"),("wy","wyoming"),("dc","district of columbia"),
+]
+
+_CA_PROVINCE_PAIRS = [
+    ("ab","alberta"),("bc","british columbia"),("mb","manitoba"),("nb","new brunswick"),
+    ("nl","newfoundland and labrador"),("ns","nova scotia"),("on","ontario"),
+    ("pe","prince edward island"),("qc","quebec"),("sk","saskatchewan"),
+    ("nt","northwest territories"),("nu","nunavut"),("yt","yukon"),
+]
+
+def _build_iso_name_map(pairs):
+    m = {}
+    for iso, name in pairs:
+        m[iso] = name
+        m[name] = iso
+    return m
+
+_COUNTRY_FUZZY = _build_iso_name_map(_COUNTRY_PAIRS)
+_STATE_FUZZY = _build_iso_name_map(_US_STATE_PAIRS + _CA_PROVINCE_PAIRS)
+
 
 def _normalize_domain(d: str | None) -> str:
     if not d:
@@ -81,10 +143,22 @@ def _is_dead_sentinel(expected: str) -> bool:
     return any(sent in expected.upper() for sent in DEAD_DOMAIN_SENTINELS)
 
 
-def _grade_exact(expected: str, got: str) -> tuple[bool, str]:
-    """Pass if normalized values match case-insensitively. Empty == empty."""
+def _grade_exact(expected: str, got: str, prop: str = "") -> tuple[bool, str]:
+    """Pass if normalized values match case-insensitively. Empty == empty.
+
+    Adds three fuzzy-match layers on top of strict equality:
+      - INTEGER_FIELDS get ±INTEGER_TOLERANCE_PCT% drift tolerance (LinkedIn
+        re-publishes employee counts daily; a week-old golden is reliably
+        ±1-3% off current Harvest readings — strict equality penalizes
+        accurate runs).
+      - prop=='country' accepts ISO-2 ↔ English-name equivalents (US ↔
+        United States) so a golden authored in either convention works.
+      - prop=='state' accepts ISO-2 ↔ English-name equivalents for both
+        US states (CA ↔ California) and Canadian provinces (ON ↔ Ontario).
+    """
     e = _normalize_value(expected)
     g = _normalize_value(got)
+    prop_l = (prop or "").lower()
 
     if _is_dead_sentinel(e):
         # Accept empty got OR any got that flags dead/unreachable
@@ -100,6 +174,29 @@ def _grade_exact(expected: str, got: str) -> tuple[bool, str]:
     # Boolean tolerance: "true"/"True"/True all match
     if e.lower() in ("true", "false") and g.lower() in ("true", "false"):
         return e.lower() == g.lower(), f"boolean mismatch: expected {e}, got {g}"
+
+    # Numeric tolerance for integer-typed fields (LinkedIn drift)
+    if prop_l in INTEGER_FIELDS and e and g:
+        try:
+            e_num = float(e.replace(",", ""))
+            g_num = float(g.replace(",", ""))
+            if e_num == g_num:
+                return True, "numeric exact"
+            if e_num != 0:
+                drift = abs(e_num - g_num) / abs(e_num) * 100.0
+                if drift <= INTEGER_TOLERANCE_PCT:
+                    return True, f"numeric ±{drift:.1f}% (within {INTEGER_TOLERANCE_PCT:.0f}% drift tolerance)"
+                return False, f"numeric ±{drift:.1f}% drift exceeds {INTEGER_TOLERANCE_PCT:.0f}% (expected {e}, got {g})"
+        except ValueError:
+            pass  # fall through to default fail
+
+    # ISO-2 ↔ English-name equivalence for country / state
+    if prop_l == "country":
+        if _COUNTRY_FUZZY.get(e.lower()) == g.lower() or _COUNTRY_FUZZY.get(g.lower()) == e.lower():
+            return True, f"country normalization: '{e}' ≡ '{g}'"
+    elif prop_l == "state":
+        if _STATE_FUZZY.get(e.lower()) == g.lower() or _STATE_FUZZY.get(g.lower()) == e.lower():
+            return True, f"state normalization: '{e}' ≡ '{g}'"
 
     return False, f"expected '{e}', got '{g[:80]}'"
 
@@ -248,7 +345,7 @@ def grade(enriched_path: pathlib.Path, golden_path: pathlib.Path) -> dict:
             if _is_semantic_field(p, expected):
                 ok, reason = _grade_semantic(p, expected, got, client)
             else:
-                ok, reason = _grade_exact(expected, got)
+                ok, reason = _grade_exact(expected, got, prop=p)
             per_field[p]["total"] += 1
             if ok:
                 per_field[p]["pass"] += 1

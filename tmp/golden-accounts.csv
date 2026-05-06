@@ -1,16 +1,16 @@
-domain,company_name,EXPECTED_company_name,EXPECTED_company_linkedin_url,EXPECTED_employee_count,EXPECTED_state,EXPECTED_country,EXPECTED_company_type
-stripe.com,Stripe,Stripe,http://www.linkedin.com/company/stripe,15086,CA,US,SaaS
-shopify.com,Shopify,Shopify,http://www.linkedin.com/company/shopify,28354,ON,CA,SaaS
-notion.so,Notion Labs,Notion,http://www.linkedin.com/company/notionhq,700,CA,US,SaaS
-linear.app,Linear,Linear,http://www.linkedin.com/company/linearapp,226,CA,US,SaaS
-typeform.com,Typeform,Typeform,http://www.linkedin.com/company/typeform-,880,,US,SaaS
-atlassian.com,Atlassian,Atlassian,http://www.linkedin.com/company/atlassian,21334,,AU,SaaS
-canva.com,Canva,Canva,http://www.linkedin.com/company/canva,15505,,AU,SaaS
-slack.com,Slack Technologies,Slack,http://www.linkedin.com/company/tiny-spec-inc,2979,CA,US,SaaS
-mailchimp.com,Mailchimp,Mailchimp,http://www.linkedin.com/company/intuitmailchimp,1590,GA,US,SaaS
-clearbit.com,Clearbit,Clearbit,http://www.linkedin.com/company/clearbit,22,CA,US,SaaS
-segment.com,Segment,Segment,http://www.linkedin.com/company/segment-io,600,CA,US,SaaS
-github.com,GitHub,GitHub,http://www.linkedin.com/company/github,6216,CA,US,SaaS
-linkedin.com,LinkedIn,LinkedIn,http://www.linkedin.com/company/linkedin,23735,CA,US,Internet Business
-spotify.com,Spotify,Spotify,http://www.linkedin.com/company/spotify,18695,,SE,Internet Business
+domain,company_name,EXPECTED_company_name,EXPECTED_company_linkedin_url,EXPECTED_numberofemployees,EXPECTED_state,EXPECTED_country,EXPECTED_company_type
+stripe.com,Stripe,Stripe,http://www.linkedin.com/company/stripe,15086,California,United States,SaaS
+shopify.com,Shopify,Shopify,http://www.linkedin.com/company/shopify,28354,Ontario,Canada,SaaS
+notion.so,Notion Labs,Notion,http://www.linkedin.com/company/notionhq,700,California,United States,SaaS
+linear.app,Linear,Linear,http://www.linkedin.com/company/linearapp,226,California,United States,SaaS
+typeform.com,Typeform,Typeform,http://www.linkedin.com/company/typeform-,880,,United States,SaaS
+atlassian.com,Atlassian,Atlassian,http://www.linkedin.com/company/atlassian,21334,New South Wales,Australia,SaaS
+canva.com,Canva,Canva,http://www.linkedin.com/company/canva,15505,New South Wales,Australia,SaaS
+slack.com,Slack Technologies,Slack,http://www.linkedin.com/company/tiny-spec-inc,2979,California,United States,SaaS
+mailchimp.com,Mailchimp,Mailchimp,http://www.linkedin.com/company/intuitmailchimp,1590,Georgia,United States,SaaS
+clearbit.com,Clearbit,Clearbit,http://www.linkedin.com/company/clearbit,22,California,United States,SaaS
+segment.com,Segment,Segment,http://www.linkedin.com/company/segment-io,600,California,United States,SaaS
+github.com,GitHub,GitHub,http://www.linkedin.com/company/github,6216,California,United States,SaaS
+linkedin.com,LinkedIn,LinkedIn,http://www.linkedin.com/company/linkedin,23735,California,United States,Internet Business
+spotify.com,Spotify,Spotify,http://www.linkedin.com/company/spotify,18695,Stockholm County,Sweden,Internet Business
 right-networks-totally-not-real-domain-12345.com,Right Networks,Right Networks,,,,,Other
