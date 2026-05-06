@@ -42,7 +42,7 @@ When summarizing run results to the user, **always reference `tmp/enriched-flat.
 
 Two scoring paths exist in this repo and they're not interchangeable:
 
-- **[tools/score.py](tools/score.py) — deterministic JSON-rule scorer.** Pure pattern match (`match_all` / `match_any` over typed operators eq/in/gt/gte/between/is_null). No LLM call at scoring time, fully reproducible, free. Use when scoring rules are crisp and rule-based (e.g. "Tier 1 if SaaS + US + 50–2000 employees"). Companion: [docs/schemas/account-scoring-model.md](docs/schemas/account-scoring-model.md).
+- **[tools/score.py](tools/score.py) — deterministic JSON-rule scorer.** Pure pattern match (`match_all` / `match_any` over typed operators eq/in/gt/gte/between/is_null). No LLM call at scoring time, fully reproducible, free. Use when scoring rules are crisp and rule-based (e.g. "Tier 1 if SaaS + US + 50–2000 employees"). Starter template at [recipes/scoring-model-template.json](recipes/scoring-model-template.json) (validated against the demo run); schema-doc reference at [docs/schemas/account-scoring-model.md](docs/schemas/account-scoring-model.md). Note: `score.py`'s shape is a deterministic subset of the v1 schema — it uses `rules[].tier` instead of `tiers[].match_all`, and skips `axes` / `overrides` / `notes_to_ai` since those are AI-evaluation hints.
 
 - **[enrichment-functions/score_account_via_latitude/](enrichment-functions/score_account_via_latitude/) — Latitude-managed prompt scorer.** Cloud LLM call per row with prompt versioning + dataset-driven regression. Use when scoring requires judgment (fuzzy ICP fit, edge cases, narrative inputs). Costs per row, slower, but evolvable.
 

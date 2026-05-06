@@ -1,0 +1,108 @@
+{
+  "_doc_": [
+    "Template scoring model for tools/score.py — copy this to tmp/scoring-model.json,",
+    "edit the rules + tier labels for your ICP, then run:",
+    "  python3 tools/score.py --input tmp/enriched-flat.csv \\",
+    "                         --model tmp/scoring-model.json \\",
+    "                         --output tmp/scored-accounts.csv",
+    "",
+    "Shape conventions (validated 2026-05-05 on the canonical 50-row demo):",
+    "- 'tiers' is for label/sales_motion lookup; the 'tier' integer in 'rules' is the source of truth",
+    "- 'rules' evaluated top-to-bottom; FIRST MATCH wins (no override scoring)",
+    "- Put hard disqualifiers FIRST so they short-circuit before positive tiers fire",
+    "- Put most-specific positive tiers (Tier 1) before looser ones (Tier 2, 3) for proper",
+    "  rank ordering — a Tier-1-eligible row must hit the Tier 1 rule before falling through",
+    "- 'default_tier' is the fallback when no rule matches; usually the worst non-disqualifier tier",
+    "",
+    "Operators supported by tools/score.py:",
+    "  eq, neq, in, not_in, gt, gte, lt, lte, between (value=[lo,hi]), is_null, not_null",
+    "  Numeric ops treat blank/null as 'not matching' — null employee_count safely falls through.",
+    "",
+    "When rules need fuzzy/judgment ('this looks like a Series B Fintech') use",
+    "enrichment-functions/score_account_via_latitude/ instead — that's the LLM path.",
+    "tools/score.py is for crisp deterministic rules only."
+  ],
+
+  "name": "saas-tier-rubric-template",
+  "description": "Replace this with a one-line description of your ICP's scoring rubric.",
+  "version": 1,
+  "object_type": "account",
+  "tier_count": 4,
+  "default_tier": 3,
+
+  "tiers": [
+    {
+      "tier": 1,
+      "label": "Ideal",
+      "rule_summary": "[fill in: e.g. SaaS, US-HQ, 50-2000 employees]",
+      "sales_motion": "[fill in: e.g. Multi-touch outbound + AE assignment within 24h]"
+    },
+    {
+      "tier": 2,
+      "label": "Accessible",
+      "rule_summary": "[fill in: looser version of Tier 1]",
+      "sales_motion": "[fill in: e.g. Single-touch nurture]"
+    },
+    {
+      "tier": 3,
+      "label": "Stretch",
+      "rule_summary": "[fill in: edge cases / weak signal]",
+      "sales_motion": "[fill in: e.g. Quarterly newsletter only]"
+    },
+    {
+      "tier": 4,
+      "label": "Disqualified",
+      "rule_summary": "[fill in: hard-no patterns]",
+      "sales_motion": "Drop / do not route"
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "tier_4_disqualify_non_us_or_non_saas",
+      "_note": "Disqualifier evaluated FIRST so non-US SaaS doesn't accidentally land Tier 1",
+      "match_any": [
+        {"field": "country", "op": "neq", "value": "US"},
+        {"field": "company_type", "op": "neq", "value": "SaaS"}
+      ],
+      "tier": 4
+    },
+    {
+      "id": "tier_1_ideal_band",
+      "_note": "Most-specific positive rule fires before Tier 2's looser rule",
+      "match_all": [
+        {"field": "company_type", "op": "eq", "value": "SaaS"},
+        {"field": "country", "op": "eq", "value": "US"},
+        {"field": "employee_count", "op": "between", "value": [50, 2000]}
+      ],
+      "tier": 1
+    },
+    {
+      "id": "tier_2_accessible_us_saas",
+      "_note": "Looser positive — covers 11-49 emp AND 2001+ emp (since both >10 but outside Tier 1 band)",
+      "match_all": [
+        {"field": "company_type", "op": "eq", "value": "SaaS"},
+        {"field": "country", "op": "eq", "value": "US"},
+        {"field": "employee_count", "op": "gt", "value": 10}
+      ],
+      "tier": 2
+    },
+    {
+      "id": "tier_3_stretch_low_or_null_emp",
+      "_note": "Falls through here when SaaS+US but emp is null or <=10. Could also use is_null + lt and combine with match_any.",
+      "match_all": [
+        {"field": "company_type", "op": "eq", "value": "SaaS"},
+        {"field": "country", "op": "eq", "value": "US"}
+      ],
+      "tier": 3
+    }
+  ],
+
+  "evaluation_order": "first_match",
+
+  "notes": [
+    "country='US' check excludes null country (treats unknown HQ as disqualified). If you want",
+    "null country routed to manual review instead of disqualified, add a separate rule for",
+    "{field: country, op: is_null} -> tier 3 BEFORE the Tier 4 disqualifier."
+  ]
+}
