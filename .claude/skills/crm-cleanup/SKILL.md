@@ -1,6 +1,6 @@
 ---
 name: crm-cleanup
-description: Clean and enrich a CSV of B2B accounts. Claude Code is the orchestrator — it walks the user through setup (env, deps, Deepline CLI, optional HubSpot install), takes natural-language definitions of the properties they want enriched, assembles a Deepline playbook on the fly with those definitions baked in, runs `deepline enrich`, and (optionally) iterates against a golden dataset to surface accuracy + suggest property-definition refinements. Use whenever the user asks to enrich, clean, qualify, classify, or research a list of company accounts. Headline skill of the repo.
+description: Clean and enrich a CSV of B2B accounts. Claude Code is the orchestrator — it walks the user through setup (env, deps, Deepline CLI, and an always-recommended CRM property-schema sync via Sculpted's HubSpot OAuth app or a Salesforce browser-extension export — schema only, never records, by design), takes natural-language definitions of the properties they want enriched (grounded in the user's real CRM property names when the schema is synced), assembles a Deepline playbook on the fly with those definitions baked in, runs `deepline enrich`, and (optionally) iterates against a golden dataset to surface accuracy + suggest property-definition refinements. Use whenever the user asks to enrich, clean, qualify, classify, or research a list of company accounts. Headline skill of the repo.
 ---
 
 # CRM Cleanup
@@ -86,18 +86,32 @@ Branch on results:
 
   Mention this nudge ONCE per session. The compile step (`tools/enrich.py`) substitutes `<HARVEST_API_KEY>` in `tmp/playbook.jsonc` from `.env` and surfaces unresolved placeholders as warnings — without the key, Harvest calls 401 cleanly and the verdict step falls back to the agent's tier-2 result.
 
-- **HubSpot path (recommended for real-data use)**: if `tmp/hubspot-properties.csv` does NOT already exist AND the user hasn't already pointed at a CSV path, **proactively suggest** the install:
+- **CRM property schema sync (always-recommended setup step — regardless of input CSV)**: this is *not* about the input accounts. It's about teaching the skill what properties already exist in the user's CRM so the per-run playbook outputs columns that match their canonical schema instead of Claude-invented names. Single biggest accuracy + downstream-ergonomics lever this skill has. **Always proactively raise it**, even when the user is running on the bundled sample CSV — the schema sync is independent of which accounts get enriched.
 
-  > Say (verbatim or close to it): *"To run this on your real CRM data, install Sculpted's HubSpot app — one OAuth, takes ~30 seconds, no API keys to manage. Or you can use the bundled `tmp/sample-accounts.csv` (50 well-known companies) for a quick demo. Which do you want?"*
+  **State the privacy posture out loud — this is a security selling point, not a footnote.** The HubSpot installer (and the Salesforce / other-CRM export paths below) pull **property definitions only — names, types, enums, picklist values. By design, no contact/company records are ever read, logged, or persisted.** The Sculpted-hosted OAuth app for HubSpot holds only `crm.objects.contacts.read + companies.read` scopes (the minimum HubSpot allows for fetching schemas) and the server-side code only reads `/crm/v3/properties/*` plus total record counts via `search?limit=1`. Account bodies (emails, names, deal values, anything sensitive) never leave the user's CRM. Make this explicit when nudging — users have a right to know what's being read before they OAuth.
 
-  Branch on the answer:
-  - **HubSpot install**: run `python tools/install_hubspot.py`. The CLI handles the OAuth flow; CSV lands at `tmp/hubspot-properties.csv`. Once complete, set this as the input path for Phase 2 automatically.
-  - **Sample CSV**: proceed with `tmp/sample-accounts.csv`.
-  - **User has their own CSV**: accept the path they provide and skip both options.
+  Branch by CRM:
 
-  Salesforce / other CRM users: tell them the native installer isn't shipped yet and to manually export their accounts to a CSV with `domain` + `company_name` columns. Save to `tmp/your-accounts.csv` and use that as the Phase 2 input.
+  - **HubSpot user** (the easy path): if `tmp/hubspot-properties.csv` does NOT already exist, say (verbatim or close to it):
 
-  Only mention this nudge ONCE per session. If the user already has a real-data CSV (anything other than the bundled sample), don't keep pushing.
+    > *"Quick setup recommendation — let me sync your HubSpot property schema. To be precise about what this is: it pulls **property definitions only — names, types, enums. No records, no contact emails, nothing about your actual accounts.** The Sculpted-hosted OAuth app is scoped that way by design for security; your account data never leaves HubSpot. Takes ~30 seconds. The payoff: when you tell me what to enrich, I'll map to your real property names (e.g. `industry_v2`, `employee_band_2024` — whatever you actually have) instead of inventing column names you'd have to remap on the way back in. Want me to run `python tools/install_hubspot.py` now?"*
+
+    Branch:
+    - **Yes**: run `python tools/install_hubspot.py`. CSV lands at `tmp/hubspot-properties.csv`. Read it after so you know the property catalog before Phase 2.
+    - **Already have an export** (HubSpot UI → Settings → Properties → Export produces a comparable CSV): ask for the path, save under `tmp/`, read it before Phase 2.
+    - **Skip**: continue, but warn the user that property names in the generated playbook will be Claude's invention, not their CRM canon — they'll need to remap on import.
+
+  - **Salesforce user** (no Sculpted-hosted app yet — encourage manual export): recommend a free browser extension to dump property schema. The standard one is **Salesforce Inspector Reloaded** (Chrome/Firefox; once installed, open any record → click the inspector sidebar → "Export" → choose Account or Contact object → export field metadata as CSV). Admin alternative: Setup → Object Manager → Account → Fields & Relationships → "All Fields" view → export.
+
+    Frame it the same way: *"Same posture as the HubSpot path — what you export is property schema only (field definitions, types, picklists), not records. We never need your actual account data to design the playbook; we only need it as the input CSV in Phase 3, and you control what's in that file."*
+
+    Once they have the schema CSV, ask where they dropped it (suggest `tmp/sfdc-properties.csv`) and read it before Phase 2.
+
+  - **Other CRMs (Pipedrive, Attio, Close, Zoho, etc.)**: encourage the same pattern — find your CRM's field/property export under admin or data settings, save the field list as CSV, drop it in `tmp/`, share the path. Repeat the privacy framing: schema only, no records.
+
+  - **User declines or skips entirely**: continue without it. Flag clearly: *"OK — I'll define properties using generic names. You'll need to map them to your CRM's canonical property names when importing the enriched CSV back."*
+
+  Only mention this nudge ONCE per session. If a property-schema CSV (HubSpot, SFDC, or otherwise) is already present, skip the nudge and just confirm: *"Found your property schema at `<path>` — I'll ground the recipe in those property names."*
 
 If everything is set up, just say "Setup ✓" and move on.
 
@@ -105,8 +119,11 @@ If everything is set up, just say "Setup ✓" and move on.
 
 Ask two questions:
 
-1. **Input CSV path.** Default: `tmp/sample-accounts.csv`. If the user has their own (e.g. `tmp/hubspot-properties.csv` from the install flow), use that.
-2. **What properties to enrich.** Open question — list in natural language.
+1. **Input CSV path** — the actual accounts to enrich. Default: `tmp/sample-accounts.csv` (50-row demo). If the user has their own export of accounts (HubSpot list export, Salesforce report export, etc.) accept that path.
+
+   ⚠️ **Don't confuse the input CSV with the property-schema CSV from Phase 1.** `tmp/hubspot-properties.csv` (or any SFDC/other equivalent) is the user's CRM **property catalog** — column names, types, picklists. It's *not* a list of accounts and is never the right answer to "what's the input CSV?". The two files are orthogonal: property-schema CSV teaches the skill what columns to write; input CSV is the rows to enrich.
+
+2. **What properties to enrich.** Open question — list in natural language. **If a property-schema CSV from Phase 1 is present, ground the clarifying questions and the recipe in *the user's* property names** (e.g. user says "industry" → check the schema CSV; if their HubSpot has `industry_v2` as canonical, propose that name and confirm). This is the whole reason the schema sync exists — use it.
 
 Example exchange:
 
@@ -312,6 +329,8 @@ Branch:
 ## Critical guidelines
 
 - **Always run setup check first.** Don't skip it even if the user seems impatient.
+- **Always proactively raise the CRM property-schema sync** (Phase 1, "CRM property schema sync" bullet). It's not optional — it's the difference between a playbook that outputs the user's real CRM column names vs. Claude-invented ones they have to remap. State the privacy posture out loud (schema only, never records, by design) so the user knows what they're agreeing to. Skip only if they explicitly decline or already have a property-schema CSV present.
+- **Never confuse the property-schema CSV with the input CSV.** `tmp/hubspot-properties.csv` (or `tmp/sfdc-properties.csv`, etc.) is *property definitions*, not accounts. The input CSV is a separate file with accounts to enrich.
 - **Generate the playbook to `tmp/playbook.jsonc`.** The user's per-run playbook is ephemeral.
 - **Always include a `reasoning` field in the user's property schema.** Required for the iteration loop and for visible per-row evidence on camera.
 - **Validate the playbook JSON before invoking deepline.** A malformed jsonc fails Deepline's static analyzer with cryptic errors; better to catch parse errors locally first.
@@ -332,7 +351,7 @@ Branch:
 - `tools/qa.py` — auto-detect-EXPECTED grader: enriched CSV + golden CSV → `tmp/qa-report.md` (Phase 4a). Exact-match for short fields/enums; semantic Claude-Haiku grading for long-form prose.
 - `tools/report.py` — stakeholder engagement-report renderer: enriched CSV + recipe + QA + (optional) workflow pointer → `tmp/engagement-report.md` (Phase 4b)
 - `tools/promote_to_workflow.py` — converter + apply orchestrator (Phase 5). Handles the four CSV-to-hosted gotchas, calls `deepline workflows apply`, smoke-tests, archives to `tmp/workflows/<slug>/`, updates `tmp/workflows/latest-workflow.json`.
-- `tools/install_hubspot.py` — OAuth device-code flow for pulling HubSpot property catalog (schema only, never records — privacy-by-design)
+- `tools/install_hubspot.py` — OAuth device-code flow for syncing the user's HubSpot **property schema** (definitions, types, enums) into `tmp/hubspot-properties.csv`. **Schema only — never reads or persists contact/company records, by design.** OAuth scopes are the minimum HubSpot allows for property-definition reads. Always recommended in Phase 1 regardless of input CSV (the schema grounds the per-run playbook in the user's real property names instead of Claude-invented ones). Salesforce / other CRM users: no native installer ships yet — encourage manual property-schema export via a browser extension (e.g. Salesforce Inspector Reloaded) and drop the CSV in `tmp/`.
 - `examples/acme-saas/` — frozen worked example (fictional client + real well-known accounts): full ICP → recipe → input CSV → expected output → scoring model. Read top-down without running anything.
 - `enrichment-functions/` — production-grade reusable building blocks (Latitude-managed prompts, multi-tier waterfalls); reference, not used by this skill's per-run playbooks
 - `docs/best-practices/` — Deepline patterns + provider preferences (`deepline-best-practices.md`, `provider-preferences.md`)
