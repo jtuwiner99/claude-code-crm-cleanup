@@ -1,0 +1,31 @@
+domain,company_name,EXPECTED_industry,EXPECTED_employee_count_tier,EXPECTED_is_acquired,EXPECTED_acquirer_name,EXPECTED_pitch
+stripe.com,Stripe,FinTech,501+,false,,Online payment processing infrastructure for internet businesses.
+shopify.com,Shopify,E-commerce,501+,false,,E-commerce platform letting merchants build and run online stores.
+notion.so,Notion Labs,B2B SaaS,501+,false,,Connected workspace combining notes docs and project management.
+linear.app,Linear,B2B SaaS,51-500,false,,Issue tracking and project management built for software teams.
+typeform.com,Typeform,B2B SaaS,501+,false,,Conversational online forms and surveys.
+atlassian.com,Atlassian,B2B SaaS,501+,false,,Collaboration and productivity software for software teams (Jira Confluence Trello).
+canva.com,Canva,B2B SaaS,501+,false,,Online design and visual communication platform.
+slack.com,Slack Technologies,B2B SaaS,501+,true,Salesforce,Channel-based business messaging platform.
+mailchimp.com,Mailchimp,B2B SaaS,501+,true,Intuit,Email marketing and marketing automation platform.
+clearbit.com,Clearbit,B2B SaaS,51-500,true,HubSpot,B2B data enrichment and identification for sales and marketing teams.
+segment.com,Segment,B2B SaaS,501+,true,Twilio,Customer data platform for collecting unifying and routing first-party data.
+github.com,GitHub,B2B SaaS,501+,true,Microsoft,Developer platform for source code hosting collaboration and CI/CD.
+linkedin.com,LinkedIn,Services,501+,true,Microsoft,Professional networking platform.
+spotify.com,Spotify,Services,501+,false,,Audio streaming and media services subscription platform.
+right-networks-totally-not-real-domain-12345.com,Right Networks,Other,1-50,false,,UNREACHABLE_OR_DEAD_DOMAIN
+asana.com,Asana,B2B SaaS,501+,false,,Work management platform for teams to coordinate tasks and projects.
+monday.com,Monday.com,B2B SaaS,501+,false,,Work operating system for managing teams and workflows.
+airtable.com,Airtable,B2B SaaS,501+,false,,Low-code platform combining spreadsheet and database for building business apps.
+webflow.com,Webflow,B2B SaaS,501+,false,,Visual development platform for building production-grade websites without code.
+figma.com,Figma,B2B SaaS,501+,false,,Collaborative interface design platform for product teams.
+miro.com,Miro,B2B SaaS,501+,false,,Online collaborative whiteboard and visual workspace platform.
+loom.com,Loom,B2B SaaS,51-500,true,Atlassian,Asynchronous video messaging platform for work.
+intercom.com,Intercom,B2B SaaS,501+,false,,Customer service and engagement platform with AI-driven support.
+zoom.us,Zoom,B2B SaaS,501+,false,,Video communications platform for meetings webinars and chat.
+dropbox.com,Dropbox,B2B SaaS,501+,false,,Cloud storage and file collaboration platform.
+braintree.com,Braintree,FinTech,501+,true,PayPal,Online payment platform serving merchants and developers.
+chorus.ai,Chorus,B2B SaaS,51-500,true,ZoomInfo,Conversation intelligence platform for sales teams.
+sap.com,SAP,B2B SaaS,501+,false,,Enterprise software for business operations and customer relationship management.
+example-defunct-startup-2019.example,Defunct Startup,Other,1-50,false,,UNREACHABLE_OR_DEAD_DOMAIN
+example-tiny-vertical-saas.example,Tiny Vertical SaaS,Other,1-50,false,,UNREACHABLE_OR_DEAD_DOMAIN

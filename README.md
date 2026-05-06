@@ -18,7 +18,9 @@ Then four phases:
 1. **Setup check** (~10s) — Claude verifies your `.env`, deps, Deepline CLI; helps install whatever's missing.
 2. **Property definition** (~60s) — you describe in natural language what to enrich. *"Industry, employee count tier, whether they've been acquired, and a one-sentence pitch."* Claude asks one clarifying question per property to pin the definition.
 3. **Compile + run** (~30s) — Claude writes a `tmp/playbook.jsonc` with your properties baked into the deeplineagent prompt + jsonSchema, then runs `deepline enrich`. Live Deepline session UI streams progress.
-4. **Iterate** (optional) — if `tmp/golden-accounts.csv` is present, diff enriched vs expected, surface misses, propose a definition tweak, regenerate playbook on your signoff.
+4. **Grade + report** — `tools/qa.py` grades enriched-vs-`tmp/golden-accounts.csv` (when present) and writes `tmp/qa-report.md` with a headline accuracy % + per-field breakdown. `tools/report.py` then renders `tmp/engagement-report.md` — a stakeholder-facing markdown brief with top findings (acquired companies to reroute, dead domains to drop, industry distribution), accuracy, sample rows, and copy-paste-ready next steps. That's the artifact you'd hand to a CRO.
+
+> Want to see what an end-to-end engagement looks like before installing? Read **[`examples/acme-saas/`](./examples/acme-saas/)** top-down — fictional client, real well-known accounts, full ICP → recipe → input → expected output → report. ~10 min, no setup.
 
 ## Use your real CRM data
 
@@ -89,6 +91,8 @@ claude-code-crm-cleanup/
 │
 ├── tools/                                       ← entry-point CLIs you actually run
 │   ├── enrich.py                                → invoked by `/crm-cleanup` to run a generated playbook against a CSV
+│   ├── qa.py                                    → grades enriched output against tmp/golden-accounts.csv → tmp/qa-report.md (headline %, per-field breakdown, failing rows)
+│   ├── report.py                                → renders the stakeholder engagement-report from enriched + recipe + qa → tmp/engagement-report.md
 │   └── install_hubspot.py                       → OAuth-installs Sculpted's HubSpot app, drops your property defs into tmp/
 │
 ├── runner/
@@ -96,6 +100,9 @@ claude-code-crm-cleanup/
 │
 ├── recipes/
 │   └── default-account-enrichment.yaml          ← teaching reference: what an account-enrichment recipe looks like, top-down
+│
+├── examples/
+│   └── acme-saas/                               ← frozen worked example: fictional client + real well-known accounts. Read top-down (icp.md → how-this-was-built.md → recipe.yaml → expected-output.csv → expected-report.md) to see a complete engagement before running anything.
 │
 ├── tmp/                                         ← sample data + run output land here
 │   ├── sample-accounts.csv                      → 50-row synthetic dataset with hero rows embedded (acquired/subsidiary/dead-domain/geo-mismatch)
@@ -163,7 +170,7 @@ claude-code-crm-cleanup/
     └── preset_categories/                       → default classification taxonomies (industry, persona, seniority, etc.)
 ```
 
-The headline path is **`claude → /crm-cleanup`**. The skill handles setup, asks what you want enriched, generates a Deepline playbook tuned to your properties (saved at `tmp/playbook.jsonc`), runs it via `tools/enrich.py`, and lands the output at `tmp/enriched.csv`. Everything in `enrichment-functions/` is reference material — production-grade functions you compose into your own playbooks for advanced runs.
+The headline path is **`claude → /crm-cleanup`**. The skill handles setup, asks what you want enriched, generates a Deepline playbook tuned to your properties (saved at `tmp/playbook.jsonc`), runs it via `tools/enrich.py`, lands the enriched output at `tmp/enriched.csv`, grades it against `tmp/golden-accounts.csv` via `tools/qa.py` (writing `tmp/qa-report.md`), then renders `tmp/engagement-report.md` via `tools/report.py` — a stakeholder-facing markdown brief that closes the run. Everything in `enrichment-functions/` is reference material — production-grade functions you compose into your own playbooks for advanced runs.
 
 ## Skills (`.claude/skills/`)
 

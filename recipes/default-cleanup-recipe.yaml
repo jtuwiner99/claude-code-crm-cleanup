@@ -1,0 +1,128 @@
+# recipes/default-cleanup-recipe.yaml
+#
+# YAML companion to recipes/default-cleanup-template.jsonc — describes the
+# 6-property baseline cleanup that the /crm-cleanup skill ships with by
+# default. The skill saves the user's run-time recipe to tmp/recipe.yaml,
+# which is regenerated per session; this file is the durable starting
+# point that survives across sessions.
+#
+# Inputs (per CSV row):
+#   - domain          (required)
+#   - company_name    (recommended; optional)
+#
+# Outputs (per row, written to tmp/enriched-flat.csv):
+
+inputs:
+  csv: tmp/sample-accounts.csv  # default; user overrides at runtime
+  required_columns: [domain]
+  optional_columns: [company_name]
+
+pipeline:
+  - inputs           # JS: normalize domain
+  - lookup           # apollo_enrich_company: domain → LinkedIn URL + firmographics
+  - harvest_url      # JS: build Harvest /linkedin/company URL
+  - harvest          # generic_http_request: scrape LinkedIn via Harvest
+  - classify         # deeplineagent (haiku-4.5): company_type classification
+  - verdict          # JS: compose flat output row
+
+properties:
+  - name: company_name
+    description: >
+      Canonical brand name (e.g. "Stripe", not "Stripe, Inc.").
+      Source priority: Harvest LinkedIn name → Apollo organization.name → input.
+    type: string
+
+  - name: domain
+    description: >
+      Root domain only (apex.tld). Lowercase, no protocol, no www, no
+      path or query. Deterministic JS normalization of the input column.
+    type: string
+
+  - name: company_linkedin_url
+    description: >
+      Canonical linkedin.com/company/{slug}/ URL. Source: apollo_enrich_company
+      tier-1 (cheap deterministic provider). NULL when no high-confidence
+      match — never best-guess.
+    type: ["string", "null"]
+
+  - name: employee_count
+    description: >
+      Exact employee headcount as an integer from the Harvest LinkedIn
+      scrape (api.harvest-api.com/linkedin/company). NULL with a reason
+      when Harvest didn't return a count — no AI band fallback.
+    type: ["integer", "null"]
+
+  - name: street
+    description: >
+      HQ street address (line1 from element.locations[] entry where
+      headquarter:true). Partial-OK contract — populate if Harvest has it,
+      NULL otherwise. Don't synthesize.
+    type: ["string", "null"]
+
+  - name: city
+    description: >
+      HQ city. From Harvest's parsed location data. NULL when missing.
+    type: ["string", "null"]
+
+  - name: state
+    description: >
+      HQ state/province as 2-letter code for US (MD, CA, NY) and Canada
+      (ON, BC, QC). NULL elsewhere — don't try to map non-US-CA regions.
+    type: ["string", "null"]
+
+  - name: zip
+    description: >
+      HQ postal code. From Harvest. NULL when missing.
+    type: ["string", "null"]
+
+  - name: country
+    description: >
+      HQ country as ISO 3166-1 alpha-2 code (US, GB, DE, JP). Always
+      populated when any HQ location data exists; NULL only when Harvest
+      returned no location at all.
+    type: ["string", "null"]
+
+  - name: company_type
+    description: >
+      HubSpot stock enum (custom property exact values, do not deviate):
+        - SaaS                  — software-as-a-service businesses
+        - E-Commerce            — online retail / DTC
+        - Digital Agency        — services agencies (marketing, dev, design)
+        - Traditional Business  — non-digital-native operations
+        - Internet Business     — web/digital businesses that aren't SaaS
+                                  or e-commerce (marketplaces, content, etc.)
+        - Other                 — default when none cleanly fit
+      Classified by the AI agent using Harvest's LinkedIn description.
+      Customer-specific definitions live in tmp/recipe.yaml when the user
+      tightens them during Phase 4 iteration.
+    type: string
+    enum: [SaaS, E-Commerce, Digital Agency, Traditional Business, Internet Business, Other]
+
+  - name: reasoning
+    description: >
+      1-2 sentences citing the strongest signal behind the verdict OR the
+      reason an expected field came back NULL (e.g. "Harvest rate-limited
+      (code_22)" — auto-recoverable via tools/retry_harvest_chunked.py).
+    type: string
+
+diagnostic_columns:
+  - employee_source       # harvest_linkedin_exact | none
+  - linkedin_url_source   # apollo_tier1 | none
+  - harvest_rate_limited  # boolean — true if Harvest body had code_22 error
+  - domain_input_raw      # the original input value (for audit)
+
+operating_notes:
+  - >
+    Harvest enforces a per-key concurrency cap (~5). Above that, Harvest
+    returns HTTP 200 OK with body.error="Too many queued requests
+    (code_22)". tools/enrich.py auto-detects this in the run summary and
+    triggers tools/retry_harvest_chunked.py (5 rows at a time, 2s between
+    chunks) without needing manual intervention.
+  - >
+    Apollo (~$0.017/row) finds the LinkedIn URL deterministically.
+    Harvest (~$0.005/row) scrapes it. Total cost on 50 rows: ~$1.10
+    on the first pass, plus ~$0.50 if rate-limit retry is needed.
+  - >
+    Classify uses claude-haiku-4.5 (cheap, deterministic). System prompt
+    explicitly bans tool use to keep the model from going off into web
+    searches and producing raw SSE streams instead of structured output.

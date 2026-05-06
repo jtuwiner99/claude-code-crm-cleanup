@@ -1,0 +1,82 @@
+{
+  "name": "acme-saas-account-tiers",
+  "description": "Deterministic tier rubric for Acme SaaS — applied after enrichment populates industry, employee_count_tier, is_acquired, hq_country.",
+  "version": 1,
+  "tiers": [
+    {
+      "tier": 1,
+      "label": "Ideal",
+      "rule_summary": "B2B SaaS, 501+ employees, US-HQ, independent",
+      "match_all": [
+        {"field": "industry", "op": "eq", "value": "B2B SaaS"},
+        {"field": "employee_count_tier", "op": "eq", "value": "501+"},
+        {"field": "is_acquired", "op": "eq", "value": false}
+      ],
+      "sales_motion": "Multi-touch outbound sequence + AE assignment within 24h"
+    },
+    {
+      "tier": 2,
+      "label": "Acceptable",
+      "rule_summary": "B2B SaaS 51-500, OR FinTech 501+, both independent",
+      "match_any": [
+        {
+          "match_all": [
+            {"field": "industry", "op": "eq", "value": "B2B SaaS"},
+            {"field": "employee_count_tier", "op": "eq", "value": "51-500"},
+            {"field": "is_acquired", "op": "eq", "value": false}
+          ]
+        },
+        {
+          "match_all": [
+            {"field": "industry", "op": "eq", "value": "FinTech"},
+            {"field": "employee_count_tier", "op": "eq", "value": "501+"},
+            {"field": "is_acquired", "op": "eq", "value": false}
+          ]
+        }
+      ],
+      "sales_motion": "Single-touch nurture; promote to Tier 1 if they hit 500+ employees"
+    },
+    {
+      "tier": 3,
+      "label": "Stretch",
+      "rule_summary": "International B2B SaaS 501+, OR US E-commerce/Services 501+",
+      "match_any": [
+        {
+          "match_all": [
+            {"field": "industry", "op": "in", "value": ["E-commerce", "Services"]},
+            {"field": "employee_count_tier", "op": "eq", "value": "501+"},
+            {"field": "is_acquired", "op": "eq", "value": false}
+          ]
+        }
+      ],
+      "sales_motion": "Quarterly newsletter only; no AE time"
+    }
+  ],
+  "drop_rules": [
+    {
+      "label": "Acquired — reroute to acquirer",
+      "match_all": [{"field": "is_acquired", "op": "eq", "value": true}],
+      "action": "reroute_to_acquirer"
+    },
+    {
+      "label": "Dead domain — remove from list",
+      "match_any": [
+        {"match_all": [{"field": "is_live", "op": "eq", "value": false}]},
+        {"match_all": [{"field": "routing_flag", "op": "eq", "value": "drop"}]}
+      ],
+      "action": "drop"
+    },
+    {
+      "label": "Too small — out of ICP",
+      "match_all": [{"field": "employee_count_tier", "op": "eq", "value": "1-50"}],
+      "action": "drop"
+    },
+    {
+      "label": "Wrong industry",
+      "match_all": [{"field": "industry", "op": "in", "value": ["Hardware", "Other"]}],
+      "action": "drop"
+    }
+  ],
+  "evaluation_order": ["drop_rules", "tiers"],
+  "tie_break": "first_match"
+}

@@ -69,15 +69,22 @@ Lands `playbook.jsonc` + an enriched CSV in your run output directory.
 
 The flow:
 
-1. Compile the latest playbook from current scoping.
-2. Convert the CSV-mode playbook → hosted-workflow `apply` payload via your converter (handles all four CSV→hosted gotchas — bracket-form input reads, waterfall vs simple-tool wrap, run_javascript shape detection, `{{<alias>}}` template envelope rewriting). See [`docs/best-practices/deepline-best-practices.md`](../../../docs/best-practices/deepline-best-practices.md) → "Four CSV-to-hosted gotchas".
+1. Compile the latest playbook from current scoping (or use `tmp/playbook.compiled.jsonc` if it's already there from a `/crm-cleanup` run).
+2. Convert the CSV-mode playbook → hosted-workflow `apply` payload via [`tools/promote_to_workflow.py`](../../../tools/promote_to_workflow.py) — the bundled converter that encodes all four CSV→hosted gotchas (bracket-form input reads, waterfall vs simple-tool wrap, run_javascript shape detection, `{{<alias>}}` template envelope rewriting). See [`docs/best-practices/deepline-best-practices.md`](../../../docs/best-practices/deepline-best-practices.md) → "Four CSV-to-hosted gotchas" for the spec the converter implements.
 3. Call `deepline workflows apply` to publish the workflow.
-4. Smoke-test with a 1-row payload (e.g. `{"Company Domain Name":"stripe.com"}`).
-5. Archive `apply.json`, `apply-result.json`, `smoke-test-run.json`, `convert-warnings.md` to a per-deploy directory.
-6. Update a `latest-workflow.json` pointer for downstream invocations.
+4. Smoke-test with a 1-row payload (e.g. `{"domain":"stripe.com","company_name":"Stripe"}`).
+5. Archive `apply.json`, `apply-result.json`, `smoke-test-payload.json`, `smoke-test-run.json`, `convert-warnings.md` to a per-deploy directory at `tmp/workflows/<slug>/`.
+6. Update `tmp/workflows/latest-workflow.json` (the pointer downstream tools — `tools/report.py`, etc — read).
 
 ```bash
-deepline workflows apply --workflow-name <slug>_<project>_v1 --payload-file apply.json
+# One command does steps 2-6:
+python tools/promote_to_workflow.py \
+  --playbook tmp/playbook.compiled.jsonc \
+  --workflow-name <slug>
+
+# Or, lower-level — use the converter only and shell out to deepline yourself:
+python tools/promote_to_workflow.py --playbook tmp/playbook.compiled.jsonc --dry-run
+deepline workflows apply --file tmp/workflows/<slug>/apply.json
 ```
 
 **Default trigger is `api`.** Use `webhook` or `cron` for triggered workflows.
@@ -123,6 +130,6 @@ The recommended operator pattern: **iterate with CSV mode, ship with `deploy-wor
 ## What this skill does NOT cover
 
 - **What to put inside the recipe** (which enrichment functions to compose, which providers to use). See [`enrichment-functions-catalog`](../enrichment-functions-catalog/SKILL.md).
-- **CSV→hosted converter implementation.** The four documented gotchas are the spec — see [`docs/best-practices/deepline-best-practices.md`](../../../docs/best-practices/deepline-best-practices.md).
+- **CSV→hosted converter implementation.** The four documented gotchas are the spec — see [`docs/best-practices/deepline-best-practices.md`](../../../docs/best-practices/deepline-best-practices.md). The bundled converter is [`tools/promote_to_workflow.py`](../../../tools/promote_to_workflow.py).
 - **Latitude QA loop** for iterating on classification prompts. See Latitude's prompt-iteration documentation.
 - **CRM writeback** of enriched rows back to the source CRM. Today: enriched CSV → manual import. Future: native writeback.
