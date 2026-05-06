@@ -28,7 +28,8 @@ pip install -r requirements.txt
 cp .env.example .env  # then fill ANTHROPIC_API_KEY + DEEPLINE_API_KEY
 curl -s 'https://code.deepline.com/api/v2/cli/install' | bash  # Deepline CLI
 
-# Pull real CRM properties from a HubSpot account (OAuth device-code flow)
+# Sync the user's HubSpot **property schema** (definitions only — never records, by design).
+# Always run as part of setup; grounds the per-run playbook in the user's real property names.
 python tools/install_hubspot.py
 
 # Run a generated playbook directly (advanced — `/crm-cleanup` does this for you)
@@ -52,7 +53,11 @@ No build step, no test suite, no lint config. Runtime correctness is verified en
 - `jsonSchema.required` must list every property name in `properties` — partial required arrays are rejected
 - Don't use `run_if_js` gates — gate semantics are inconsistent across deepline versions
 
-**HubSpot OAuth is a Sculpted-hosted endpoint, not local.** `tools/install_hubspot.py` POSTs to a Supabase Edge Function at `aofpyrbquqxovunsxosb.supabase.co/functions/v1/`. The OAuth tokens never live on the user's machine; only the resulting CSV does. The repo's `.env` does not need any HubSpot credentials.
+**Property-schema sync is part of `/crm-cleanup` setup, not optional.** The skill must always proactively offer to sync the user's CRM property schema in Phase 1 (HubSpot via `tools/install_hubspot.py`; Salesforce / other CRMs via a manual browser-extension export, e.g. Salesforce Inspector Reloaded → drop CSV in `tmp/`). The payoff: the per-run playbook outputs columns that match the user's real CRM canon (e.g. `industry_v2`, `employee_band_2024`) instead of Claude-invented names they'd have to remap on import. This is the single biggest accuracy + downstream-ergonomics lever the skill has — see `.claude/skills/crm-cleanup/SKILL.md` Phase 1 "CRM property schema sync" bullet for the verbatim nudge copy.
+
+**Schema-only, never records — by design.** `tools/install_hubspot.py` (and the recommended Salesforce export workflows) pull **property definitions only — names, types, enums, picklist values. No contact/company records are ever read, logged, or persisted.** The Sculpted-hosted OAuth app holds only `crm.objects.contacts.read + companies.read` scopes (the minimum HubSpot allows for fetching schemas) and the server-side code only reads `/crm/v3/properties/*` plus total record counts via `search?limit=1`. State this privacy posture out loud whenever nudging the user — it's a security-first design decision, not an implementation detail. The Sculpted-hosted endpoint lives at `aofpyrbquqxovunsxosb.supabase.co/functions/v1/`; OAuth tokens never live on the user's machine; only the schema CSV does. The repo's `.env` does not need any HubSpot credentials.
+
+**Property-schema CSV ≠ input CSV.** `tmp/hubspot-properties.csv` (or `tmp/sfdc-properties.csv`) is the user's *property catalog* — it tells the skill which column names to write. The input CSV is a separate file containing the actual accounts to enrich (default: `tmp/sample-accounts.csv`). The two are orthogonal — never conflate them when the skill asks for an "input CSV path".
 
 **Reference vs. loaded.** Everything in `enrichment-functions/`, `docs/`, and `reference/` is **reference material** — not loaded or invoked by `/crm-cleanup`. They exist as authoring guidance for users who want to compose custom playbooks beyond the per-run flow. The skill teaches the pattern; the reference shows the production-grade examples.
 
