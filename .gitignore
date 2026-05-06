@@ -5,10 +5,23 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
-tmp/enriched.csv
+
+# Runtime artifacts in tmp/ — sample-accounts.csv and golden-accounts.csv are
+# the only files in tmp/ that get committed; everything else is per-session.
+tmp/enriched*.csv
 tmp/hubspot-properties.csv
+tmp/playbook.jsonc
+tmp/playbook.compiled.jsonc
+tmp/recipe.yaml
+tmp/qa-report.md
+tmp/engagement-report.md
 tmp/*.log
 tmp/playbooks/
+tmp/workflows/
+
+# Deepline CLI session traces — local-only, regenerated on every run
+deepline/
+
 node_modules/
 .idea/
 .vscode/

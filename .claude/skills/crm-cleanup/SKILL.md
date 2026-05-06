@@ -13,10 +13,11 @@ The flow has four phases:
 
 1. **Setup check** — verify env, deps, Deepline CLI; help install what's missing.
 2. **Property definition** — ask what to enrich, take NL definitions for each.
-3. **Compile + run** — generate `tmp/playbook.jsonc` with the user's properties baked in, then `deepline enrich` it.
-4. **Iteration (optional)** — if `tmp/golden-accounts.csv` exists, diff vs expected, suggest definition refinements, regenerate playbook on the user's signoff.
+3. **Compile + run** — copy `recipes/default-cleanup-template.jsonc` to `tmp/playbook.jsonc`, customize the classify+verdict steps for the user's properties, then `deepline enrich` it. Auto-recovers from Harvest rate limits via chunked retry.
+4. **Grade + report** — run `tools/qa.py` against `tmp/golden-accounts.csv` (when present) to surface a headline accuracy %, then `tools/report.py` to render `tmp/engagement-report.md` — the stakeholder-facing markdown brief that closes the session.
+5. **Ship to Deepline workflow (optional)** — offer the user a one-question close: publish the validated playbook as a hosted Deepline workflow with a live DAG, shareable trace URL, and a `deepline workflows call` endpoint. Auto-runs the converter (`tools/promote_to_workflow.py`), smoke-tests against one row, and appends a "Live workflow" section to the engagement report.
 
-User does about 60 seconds of typing across phases 1+2; phase 3 is the spectacle (Deepline session UI streams progress in parallel); phase 4 is the close.
+User does about 60 seconds of typing across phases 1+2; phase 3 is the spectacle (Deepline session UI streams progress in parallel); phase 4 is the close — accuracy verdict + the artifact you'd hand to a CRO; phase 5 is the live demo asset they can share.
 
 ## Phase 1: Setup check
 
@@ -177,73 +178,45 @@ Save this to `tmp/recipe.yaml` so the user can review/edit before the run kicks 
 
 ### 3a. Compile playbook
 
-Generate `tmp/playbook.jsonc` from a template. Use this exact structure (the patterns below are empirically validated; deviating from them hits Deepline-side gotchas listed in section "Deepline gotchas" further down):
+Start from `recipes/default-cleanup-template.jsonc` — the canonical 6-step playbook (every line has been debugged against real Deepline runs; the inline comments call out every empirical gotcha). Copy it to `tmp/playbook.jsonc` and customize the per-run bits.
 
-```jsonc
-{
-  "version": 1,
-  "commands": [
-    {
-      "alias": "inputs",
-      "tool": "run_javascript",
-      "operation": "run_javascript",
-      "payload": {
-        "code": "const rawDomain = row['domain'] || row['Domain'] || row['Company Domain Name'] || ''; const domain_clean = String(rawDomain).toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].split('?')[0].trim() || null; const company_name = row['company_name'] || row['Company Name'] || null; return { domain_clean: domain_clean, company_name_clean: company_name };"
-      }
-    },
-    {
-      "alias": "research",
-      "tool": "deeplineagent",
-      "operation": "deeplineagent",
-      "payload": {
-        "model": "anthropic/claude-haiku-4.5",
-        "system": "<USER_PROPERTY_SYSTEM_PROMPT>",
-        "prompt": "Research this company:\n\nDomain: {{inputs.domain_clean}}\nCompany name: {{inputs.company_name_clean}}\n\nReturn structured findings only.",
-        "jsonSchema": "<USER_PROPERTY_JSON_SCHEMA>"
-      }
-    },
-    {
-      "alias": "verdict",
-      "tool": "run_javascript",
-      "operation": "run_javascript",
-      "payload": {
-        "code": "<COMPOSE_OUTPUT_FROM_INPUTS_AND_RESEARCH>"
-      }
-    }
-  ]
-}
-```
-
-For `<USER_PROPERTY_SYSTEM_PROMPT>`, build a string like:
+The structural spine is **invariant** — never change the alias names, step order, or auto-unwrap-aware JS in the verdict. The bits that change per run are clearly marked in the template:
 
 ```
-You are a precise CRM data-enrichment researcher. Given a company name and domain, research the company on the public web and return the requested properties as structured JSON.
-
-Be conservative — when uncertain, prefer the less-disruptive verdict (e.g. is_acquired=false on weak evidence). Cite evidence in the reasoning field.
-
-PROPERTIES TO RETURN:
-
-<inline each property name + description from the recipe>
-
-Return ONLY valid JSON. No markdown fences. No commentary outside the JSON.
+1. inputs        — domain normalization (JS)              [keep as-is]
+2. lookup        — apollo_enrich_company                  [keep as-is]
+3. harvest_url   — Harvest URL builder (JS)               [keep as-is]
+4. harvest       — Harvest /linkedin/company GET          [keep as-is]
+5. classify      — deeplineagent (haiku-4.5)              [<USER_PROPERTIES> — rewrite per run]
+6. verdict       — flat output row composition (JS)       [<USER_PROPERTIES> — extend output shape]
 ```
+
+For the **classify** step, rewrite `system` + `prompt` + `jsonSchema` to reflect the user's NL property definitions from `tmp/recipe.yaml`. Keep the "DO NOT call any tools" instruction in the system prompt — without it, deeplineagent occasionally fans out to web search and returns raw SSE-stream as the result instead of structured object output.
+
+For the **verdict** step, extend the `return { ... }` payload to include each property the user asked for. The order of keys in the return statement determines the column order in the flat CSV — match it to the recipe's property declaration order.
 
 For `<USER_PROPERTY_JSON_SCHEMA>`, build a JSON Schema object with `properties` mapping each user-defined property to its type/enum constraint. **`required` MUST list every property name from `properties`** (deeplineagent rejects schemas with partial required arrays — see Deepline gotchas below).
 
-For `<COMPOSE_OUTPUT_FROM_INPUTS_AND_RESEARCH>`, JS code that pulls `row.inputs.domain_clean`, `row.inputs.company_name_clean`, fields from `row.research.object.*`, and emits one flat row. (Note: deeplineagent wraps its output as `{text, object, finishReason}` — read your structured fields from `.object`, not from the top of `row.research`.)
+When the user defines properties that need *new* upstream signals (e.g. funding stage, recent news), add a step *between* `harvest` and `classify` — typically another `deeplineagent` step or a provider call. Don't put new logic inside `verdict` — that step's job is composition, not enrichment.
 
 ### Deepline gotchas — write the playbook this way
 
-Empirically verified patterns. Any deviation from these tends to produce silent skips or 100%-row failures.
+Empirically verified patterns. Any deviation from these tends to produce silent skips or 100%-row failures. Every row below has a real session attached — deviating from one cost real money before the rule was learned.
 
 | Pattern | Right | Wrong | Why |
 |---|---|---|---|
-| Reading a column's value in run_javascript code | `row.inputs.domain_clean` | `row.inputs.result.domain_clean` | run_javascript auto-unwraps `.result` for `row.<col>` access |
-| Reading deeplineagent output | `row.research.object.is_acquired` | `row.research.is_acquired` | deeplineagent wraps as `{text, object, finishReason}`; structured JSON is at `.object` |
-| Templating into a URL or prompt | `https://{{inputs.domain_clean}}` | `https://{{inputs.result.domain_clean}}` | `{{alias.field}}` templates auto-unwrap to the result, same as run_javascript |
+| Reading a column's value via *chained* access | `row.inputs.domain_clean` | `row.inputs.result.domain_clean` | run_javascript auto-unwraps `.result` for `row.<col>.<field>` chained access |
+| Reading a column's value after *assignment* | `const x = unwrap(row.harvest); x.ok` (where `unwrap = (v) => v && v.result || v`) | `const x = row.harvest; x.ok // undefined!` | The auto-unwrap only triggers on chained property access. Once you assign `row.<col>` to a const, you've captured the raw `{result, __dl}` wrapper — `.result.X` access stops working as expected. The canonical playbook ships with an inline `unwrap()` helper for this. |
+| Reading deeplineagent output | `row.classify.object.company_type` | `row.classify.company_type` | deeplineagent wraps as `{text, object, finishReason}`; structured JSON is at `.object` |
+| Templating into a URL or prompt | `https://{{inputs.domain_clean}}` | `https://{{inputs.result.domain_clean}}` | `{{alias.field}}` templates auto-unwrap to the result, same as chained run_javascript access |
 | `jsonSchema.required` for deeplineagent | List **every** property from `properties` | Partial list of just the "core" required ones | Deepline's deeplineagent integration rejects schemas where required ≠ properties keyset |
 | `run_if_js` gates | **Don't use them.** Skip them entirely. | Any expression-form gate like `Boolean(row.X)` | run_if_js semantics are inconsistent across deepline versions; gates that look correct often return false silently and skip every row. For per-run playbooks, you don't need gates. |
 | Marking nullable fields in jsonSchema | `"type": ["string", "null"]` | `"type": "string"` + omit from required | deepline wants every property in required; nullable fields use the array type form |
+| Apollo company enrichment alias | `"tool": "apollo_enrich_company"` | `"tool": "enrich_company"` | Two providers (apollo + deepline_native) declare the bare alias `enrich_company`. The compiler resolves to apollo *but* throws "operation does not match canonical operation" because of the operationId mismatch. Always be explicit. |
+| Reading Apollo's LinkedIn URL | `row.lookup.data.organization.linkedin_url` | `row.lookup.data.output.company.linkedin_url` | Apollo's response shape is `{data: {organization: {...}}}`; only deepline_native uses `output.company`. |
+| Reading Harvest's HQ address | `element.locations[]` (array; find entry with `headquarter:true`) | `element.headquarter` | Harvest returns *multiple* locations; the HQ is flagged inside that array. `element.headquarter` is always null in current Harvest API. The canonical playbook iterates `locations[]`. |
+| Detecting Harvest rate-limit (the silent killer) | Check `body.error === "code_22"` (or regex `/code_22/`) — body has `{error, status: 429, data: null}` even though the HTTP outer status is 200 OK | Trust HTTP status_code === 200 to mean success | Harvest masks rate limits as 200-OK with the failure reported in the JSON body. The canonical playbook checks for this in the verdict step and surfaces `harvest_rate_limited: true`; `tools/enrich.py` auto-runs `tools/retry_harvest_chunked.py` when it detects ≥2 such rows. |
+| Harvest concurrency | Run no more than ~5 concurrent calls per API key | Let Deepline's default 24-concurrent fan-out hit Harvest | Harvest's per-key cap is ~5. Above that, every excess row gets `code_22`. The chunked retry tool batches 5-at-a-time with 2s gaps. |
 
 Use the Edit tool or Write tool to produce `tmp/playbook.jsonc`. Validate parseability with:
 
@@ -259,41 +232,82 @@ python tools/enrich.py <user_csv> --playbook tmp/playbook.jsonc --output tmp/enr
 
 The runner streams Deepline's progress; the user sees per-row processing in the Deepline session UI (URL printed mid-run). When complete, `tmp/enriched.csv` lands.
 
+**Auto rate-limit recovery.** `tools/enrich.py` post-processes the enriched CSV by scanning the `harvest` column for `body.error === "code_22"` (Harvest's silent 429). If ≥2 rows hit it, the runner automatically invokes `tools/retry_harvest_chunked.py` with chunk-size 5 and a 2-second delay between chunks — pushing the typical 60–80% Harvest hit rate up to 90+%. The user sees the recovery happen in real time without needing to know about it. Pass `--no-auto-retry` to opt out (e.g. for CI).
+
 Print a quick summary:
 - Total rows enriched
 - Counts per enum value (e.g. `industry: B2B SaaS=23, FinTech=4, Services=12, ...`)
 - Anything notable (acquired counts, large-bucket counts, dead-domain count)
 - **`employee_source` breakdown** when Harvest is in the loop — e.g. `harvest_linkedin_exact: 38, agent_linkedin_band_or_exact: 9, none: 3`. This tells the user how many rows got the live-scraped exact integer vs the band fallback. If `HARVEST_API_KEY` was unset, expect every row to be `agent_linkedin_band_or_exact` or `none` — flag this and remind the user the Harvest top-up is the smallest accuracy lever they have.
+- **Harvest rate-limit final state** (post-retry): `Harvest 429s recovered: X→0` if auto-retry ran. If any rows are still rate-limited after the retry, that's the user's signal to top up Harvest credits or extend `--delay-sec`.
 - Path to enriched CSV (and the auto-emitted flat companion at `tmp/enriched-flat.csv`)
 - Deepline session URL (preserve from runner output)
 
-## Phase 4: Iteration against golden dataset (optional)
+## Phase 4: Grade + report (the close)
 
-If `tmp/golden-accounts.csv` exists, this dataset has expected values per property. Compare enriched output against expected:
+Two scripted steps. Both produce markdown artifacts the user reads on screen.
 
-```python
-# Pseudocode — Claude executes this directly via Bash + Read
-import csv
-golden = {row['domain']: row for row in csv.DictReader(open('tmp/golden-accounts.csv'))}
-enriched = {row['domain_clean']: row for row in csv.DictReader(open('tmp/enriched.csv'))}
+### 4a. Grade against the golden (if one exists)
 
-for prop in ['industry', 'employee_count_tier', 'is_acquired', ...]:
-    correct = sum(1 for d in golden if golden[d][f'EXPECTED_{prop}'] == enriched[d][prop])
-    print(f"  {prop}: {correct}/{len(golden)} ({correct/len(golden)*100:.0f}%)")
+If `tmp/golden-accounts.csv` exists, run:
 
-# Surface mismatches
-for d, exp in golden.items():
-    for prop in [...]:
-        if exp[f'EXPECTED_{prop}'] != enriched[d][prop]:
-            print(f"  {d}: expected {prop}={exp[f'EXPECTED_{prop}']}, got {enriched[d][prop]}")
-            print(f"      reasoning: {enriched[d]['reasoning']}")
+```bash
+python tools/qa.py
 ```
 
-After surfacing mismatches, propose ONE refinement: "The model is reading `slack.com` as 'Services' instead of 'B2B SaaS'. Want me to tighten the `industry` definition to include 'collaboration software' as a B2B SaaS signal? I'll regenerate the playbook and you can re-run on the same input."
+The grader auto-detects `EXPECTED_<col>` columns in the golden, joins to `tmp/enriched-flat.csv` by normalized domain, and writes `tmp/qa-report.md`:
 
-If the user agrees: update the property's NL description in `tmp/recipe.yaml`, regenerate `tmp/playbook.jsonc`, re-run.
+- Headline accuracy % (the demo punchline)
+- Per-field pass/total breakdown
+- Failing rows with expected vs got + grader reasoning (Claude-Haiku-4.5 semantic-grades long-form fields like `reasoning`; everything else is exact-match)
 
-This is the iteration loop the demo lands on. Keep it tight — don't lecture about prompt engineering, just show one tweak.
+The shipped golden (`tmp/golden-accounts.csv`) has 15 hero rows and `EXPECTED_*` columns matching the canonical 6-property cleanup baseline (`company_name / company_linkedin_url / employee_count / state / country / company_type`). If the user's run-time recipe enriches a different property set, `tools/qa.py` only grades the columns that overlap — call out the gap aloud (*"the golden was authored against the default cleanup baseline; only X of your Y properties have a comparison anchor"*).
+
+If accuracy is below ~90% and there's a recurring failure mode (e.g. `company_type` consistently mislabels payment infrastructure as SaaS when the user's recipe expects FinTech), propose ONE refinement: *"The model is calling Stripe 'SaaS' instead of 'FinTech'. Want me to add 'FinTech' to the `company_type` enum and tighten the rule to 'payment infrastructure → FinTech'? I'll regenerate the playbook and you can re-run on the same input."*
+
+If the user agrees: update the property's NL description in `tmp/recipe.yaml`, regenerate `tmp/playbook.jsonc` (re-copy from `recipes/default-cleanup-template.jsonc` and apply the customizations), re-run from Phase 3, then re-grade. Show the accuracy delta.
+
+### 4b. Render the engagement report (always)
+
+```bash
+python tools/report.py --client-name "<the user's company name, or 'your accounts'>"
+```
+
+Reads `tmp/enriched-flat.csv` + `tmp/recipe.yaml` + `tmp/qa-report.md` (when present) and writes `tmp/engagement-report.md` — a stakeholder-facing markdown brief with headline + auto-extracted findings + 5 sample rows + next steps. End the session by reading the report file directly; let the markdown speak for itself.
+
+**Don't auto-re-run after a refinement.** Always confirm with the user before triggering a new Deepline run — each run costs real Deepline credits.
+
+## Phase 5: Ship to Deepline workflow (optional)
+
+The validated playbook from Phase 3 + the engagement report from Phase 4 are the local deliverable. Phase 5 promotes the same playbook to a hosted Deepline workflow so the user gets a live DAG view, persistent run history with shareable trace URLs, and a `deepline workflows call` endpoint their CRM/ops can hit on inbound leads.
+
+**Always ask before deploying.** Per `docs/best-practices/deepline-best-practices.md`: *"Don't auto-deploy on every CSV run — workflow inventory pollution is a real cost."* Use the verbatim copy below; if the user says no, stop cleanly.
+
+> Say (verbatim or close to it): *"Recipe is locked, run is graded, report rendered. One last optional step — want me to publish this as a hosted Deepline workflow? You get: a live DAG you can share, persistent run history with trace URLs, and a `deepline workflows call` endpoint your CRM can hit on inbound leads. Takes ~30 seconds and ~5 credits for the deploy + 1-row smoke test. Skip if you're just doing a one-shot batch."*
+
+Branch:
+
+- **Yes**: run the converter + deploy + smoke-test in one step:
+
+  ```bash
+  python tools/promote_to_workflow.py \
+    --playbook tmp/playbook.compiled.jsonc \
+    --smoke-domain stripe.com --smoke-company-name Stripe
+  ```
+
+  The script handles all four CSV-to-hosted gotchas (template envelope rewrites, bracket-form lint, `.result` wrap rules, cron refusal — see `docs/best-practices/deepline-best-practices.md` for the spec). Emits `tmp/workflows/<slug>/{apply.json,apply-result.json,smoke-test-payload.json,smoke-test-run.json,convert-warnings.md}` and updates `tmp/workflows/latest-workflow.json` (the pointer downstream tools read).
+
+  After deploy: re-run `python tools/report.py` to append a "Live workflow" section to `tmp/engagement-report.md` with the workflow URL, ID, and smoke-test verdict. Read the live URL aloud — *"that's your hosted workflow; share the URL and your prospect can see the run trace."*
+
+- **No**: print *"Stopping here. The compiled playbook stays at tmp/playbook.jsonc; you can ship later via `/iterate-and-ship-enrichment`."*
+
+**Default smoke-test row.** `--smoke-domain stripe.com --smoke-company-name Stripe` is the bundled default — it's a known-clean account where the verdict is reproducible across runs (employee_count≈15086, country=US, company_type=SaaS). Override only if the user has a specific account they want to demo against.
+
+**Defaults the converter applies.** `--trigger api` (the only sensible choice for a demo deploy — webhook needs CRM-side wiring; cron is rejected because the playbook is row-driven). `--workflow-name` auto-generates `crm_cleanup_<YYYYMMDD>_v<N>` if not supplied.
+
+**When the smoke test fails or the live URL doesn't render the verdict that matches local enrichment.** The most common cause is a CSV-mode-only template that didn't get rewritten — inspect `tmp/workflows/<slug>/convert-warnings.md` for the rewrite trail, then `deepline workflows runs --workflow-id <id> --run-id <id>` for the trace. Fix in the template-rewriter before re-deploying.
+
+**Cleanup.** Test-deploys with `_test_` in the name should be deleted post-demo (`deepline workflows delete --workflow-id <id>`). Workflow inventory pollution is a real cost.
 
 ## Critical guidelines
 
@@ -307,11 +321,19 @@ This is the iteration loop the demo lands on. Keep it tight — don't lecture ab
 ## Source artifacts in this repo
 
 - `tmp/sample-accounts.csv` — 50-row synthetic dataset with hero rows (acquired, subsidiary, dead domain, geo mismatches, win row)
-- `tmp/golden-accounts.csv` — eval set with EXPECTED_* columns per property (when added)
-- `recipes/default-account-enrichment.yaml` — teaching reference: what an account-enrichment recipe looks like, top-down
+- `tmp/golden-accounts.csv` — eval set with `EXPECTED_*` columns per property (rebuilt 2026-05-05 to match the canonical 6-property cleanup baseline)
+- `recipes/default-cleanup-template.jsonc` — **the canonical playbook the skill clones from**. 6-step pipeline (inputs → apollo lookup → harvest_url → harvest → classify → verdict) with every gotcha annotated inline.
+- `recipes/default-cleanup-recipe.yaml` — YAML companion describing the default 6 properties + diagnostic columns. Read alongside the template above.
+- `recipes/default-account-enrichment.yaml` — older teaching reference: what an account-enrichment recipe looks like at the conceptual level, top-down. Less hands-on than the cleanup template above.
 - `runner/deepline_runner.py` — Python wrapper around `deepline enrich` (handles credit accounting, session URL capture, error reporting)
-- `tools/enrich.py` — CLI you invoke to run a playbook against a CSV (`python tools/enrich.py <csv> --playbook tmp/playbook.jsonc`)
-- `tools/install_hubspot.py` — OAuth device-code flow for pulling real HubSpot property definitions
+- `tools/enrich.py` — CLI you invoke to run a playbook against a CSV (`python tools/enrich.py <csv> --playbook tmp/playbook.jsonc`). Auto-detects Harvest rate-limit and triggers chunked retry.
+- `tools/retry_harvest_chunked.py` — chunked Harvest retry (default 5-at-a-time, 2s gaps). Invoked automatically by `tools/enrich.py` when `≥2` rows hit `code_22`.
+- `tools/flatten.py` — flat-CSV emitter (one column per output property; readable in spreadsheets/CRM imports).
+- `tools/qa.py` — auto-detect-EXPECTED grader: enriched CSV + golden CSV → `tmp/qa-report.md` (Phase 4a). Exact-match for short fields/enums; semantic Claude-Haiku grading for long-form prose.
+- `tools/report.py` — stakeholder engagement-report renderer: enriched CSV + recipe + QA + (optional) workflow pointer → `tmp/engagement-report.md` (Phase 4b)
+- `tools/promote_to_workflow.py` — converter + apply orchestrator (Phase 5). Handles the four CSV-to-hosted gotchas, calls `deepline workflows apply`, smoke-tests, archives to `tmp/workflows/<slug>/`, updates `tmp/workflows/latest-workflow.json`.
+- `tools/install_hubspot.py` — OAuth device-code flow for pulling HubSpot property catalog (schema only, never records — privacy-by-design)
+- `examples/acme-saas/` — frozen worked example (fictional client + real well-known accounts): full ICP → recipe → input CSV → expected output → scoring model. Read top-down without running anything.
 - `enrichment-functions/` — production-grade reusable building blocks (Latitude-managed prompts, multi-tier waterfalls); reference, not used by this skill's per-run playbooks
 - `docs/best-practices/` — Deepline patterns + provider preferences (`deepline-best-practices.md`, `provider-preferences.md`)
 - `docs/schemas/` — schema references for scoring models + classification research signals

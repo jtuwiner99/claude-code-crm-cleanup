@@ -1,0 +1,169 @@
+// recipes/default-cleanup-template.jsonc
+//
+// Canonical 6-step Deepline playbook the /crm-cleanup skill clones from on
+// every run. The structural spine (inputs → apollo lookup → harvest_url →
+// harvest → classify → verdict) is invariant. The bits that change per run
+// are clearly marked: <USER_PROPERTIES_*>.
+//
+// Empirically validated against 50-row sample-accounts.csv (2026-05-05).
+// Every choice in here is the result of a debugging session and a real
+// failure mode — read the inline comments before "improving" anything.
+//
+// Pipeline stages:
+//   1. inputs        — JS: normalize domain (apex, lowercase, no protocol/www/path)
+//   2. lookup        — apollo_enrich_company: domain → LinkedIn URL + firmographics
+//   3. harvest_url   — JS: build Harvest /linkedin/company URL from Apollo's LinkedIn URL
+//   4. harvest       — generic_http_request: GET Harvest /linkedin/company (employee count, HQ, name)
+//   5. classify      — deeplineagent: assign HubSpot company_type from description
+//   6. verdict       — JS: compose the flat output row in property-declaration order
+//
+// HARVEST RATE LIMIT: Harvest's API caps concurrent requests-per-key at ~5.
+// Above that, Harvest returns HTTP 200 OK with body
+//   { "error": "Too many queued requests (code_22)", "status": 429, "data": null }
+// The Deepline runner can't tell from the outer 200 that the body is failed.
+// Always run `tools/retry_harvest_chunked.py` immediately after the first
+// run if any rows show this pattern (tools/enrich.py auto-detects it).
+{
+  "version": 1,
+  "commands": [
+    // ----------------------------------------------------------------------
+    // 1. inputs — domain normalization
+    // ----------------------------------------------------------------------
+    {
+      "alias": "inputs",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "const rawDomain = row['domain'] || row['Domain'] || row['Company Domain Name'] || row['website'] || ''; const domain_clean = String(rawDomain).toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0].split('?')[0].split('#')[0].trim() || null; const company_name_input = row['company_name'] || row['Company Name'] || row['name'] || null; return { domain_clean: domain_clean, domain_input_raw: rawDomain || null, company_name_input: company_name_input };"
+      }
+    },
+
+    // ----------------------------------------------------------------------
+    // 2. lookup — Apollo company enrichment
+    //
+    // GOTCHA: do NOT use the bare alias "enrich_company". Two providers
+    // declare it (apollo + deepline_native), and Deepline's resolver maps
+    // the bare alias to apollo. Be explicit. Apollo costs ~$0.017/row and
+    // returns data.organization.linkedin_url which is what the next step
+    // needs.
+    // ----------------------------------------------------------------------
+    {
+      "alias": "lookup",
+      "tool": "apollo_enrich_company",
+      "operation": "apollo_enrich_company",
+      "payload": {
+        "domain": "{{inputs.domain_clean}}"
+      }
+    },
+
+    // ----------------------------------------------------------------------
+    // 3. harvest_url — extract LinkedIn URL, build Harvest endpoint URL
+    //
+    // GOTCHA: when Apollo finds no LinkedIn URL, this step still has to
+    // emit a syntactically valid URL so the harvest step doesn't crash on
+    // an empty {{harvest_url.url}} template. We point unmatched rows at a
+    // sentinel "?url=missing" so Harvest 4xx's cleanly and the verdict
+    // step records `linkedin_url_source = "none"`.
+    // ----------------------------------------------------------------------
+    {
+      "alias": "harvest_url",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "function unwrap(x) { if (!x || typeof x !== 'object') return x; if ('result' in x && typeof x.result === 'object' && x.result !== null) { var r = x.result; if (r && typeof r === 'object' && r.meta && r.meta.executor === 'run_javascript' && 'data' in r) { return r.data; } return r; } return x; } const lookupResp = unwrap(row.lookup) || {}; const org = (lookupResp.data && lookupResp.data.organization) || null; const linkedin_url = (org && (org.linkedin_url || org.linkedinUrl)) || null; if (!linkedin_url) { return { url: 'https://api.harvest-api.com/linkedin/company?url=missing', linkedin_url: null, has_linkedin: false }; } return { url: 'https://api.harvest-api.com/linkedin/company?url=' + encodeURIComponent(linkedin_url), linkedin_url: linkedin_url, has_linkedin: true };"
+      }
+    },
+
+    // ----------------------------------------------------------------------
+    // 4. harvest — Harvest /linkedin/company fetch
+    //
+    // <HARVEST_API_KEY> is substituted at compile time by tools/enrich.py
+    // from the .env file. Don't inline a real key here.
+    // ----------------------------------------------------------------------
+    {
+      "alias": "harvest",
+      "tool": "generic_http_request",
+      "operation": "generic_http_request",
+      "payload": {
+        "method": "GET",
+        "url": "{{harvest_url.url}}",
+        "headers": {
+          "X-API-Key": "<HARVEST_API_KEY>",
+          "Content-Type": "application/json"
+        },
+        "timeout_ms": 30000
+      }
+    },
+
+    // ----------------------------------------------------------------------
+    // 5. classify — <USER_PROPERTIES_CLASSIFY_STEP>
+    //
+    // The skill rewrites system + prompt + jsonSchema for whatever
+    // taxonomy the user defines in tmp/recipe.yaml. Below is the default
+    // baseline that classifies into HubSpot's stock company_type enum.
+    //
+    // GOTCHAS for deeplineagent:
+    //   - jsonSchema.required MUST list every property in jsonSchema.properties
+    //     (partial required arrays get rejected silently)
+    //   - the model needs the literal "DO NOT call any tools" instruction —
+    //     otherwise it occasionally fans out to web search and returns raw
+    //     SSE stream as the result instead of structured object
+    //   - structured output reads from row.classify.object.<key>, not
+    //     row.classify.<key>
+    // ----------------------------------------------------------------------
+    {
+      "alias": "classify",
+      "tool": "deeplineagent",
+      "operation": "deeplineagent",
+      "payload": {
+        "model": "anthropic/claude-haiku-4.5",
+        "system": "You are a deterministic CRM classifier. DO NOT call any tools. DO NOT search the web. Use ONLY the company info given. Reply with EXACTLY one JSON object — no prose, no markdown, no code fences.\n\nClassify company_type as ONE of:\n  - SaaS                  — subscription software products (B2B SaaS apps, dev tools, productivity software)\n  - E-Commerce            — online retail or DTC brands selling goods online\n  - Digital Agency        — marketing/dev/design/growth/consulting services agencies\n  - Traditional Business  — manufacturing, logistics, real estate, brick-and-mortar, services not internet-native\n  - Internet Business     — web/digital businesses that aren't SaaS or e-commerce (marketplaces, social, content/media, ad tech, search)\n  - Other                 — when none cleanly fit\n\nWhen uncertain between adjacent categories, pick the safer/more conservative label.",
+        "prompt": "Company: {{inputs.company_name_input}} ({{inputs.domain_clean}})\nLinkedIn description (truncated): {{harvest.data.element.description}}\n\nReturn JSON: {\"company_type\": \"<one of the 6 values>\", \"company_type_reasoning\": \"<one short sentence>\"}",
+        "jsonSchema": {
+          "type": "object",
+          "properties": {
+            "company_type": {
+              "type": "string",
+              "enum": ["SaaS", "E-Commerce", "Digital Agency", "Traditional Business", "Internet Business", "Other"]
+            },
+            "company_type_reasoning": {
+              "type": "string"
+            }
+          },
+          "required": ["company_type", "company_type_reasoning"]
+        }
+      }
+    },
+
+    // ----------------------------------------------------------------------
+    // 6. verdict — compose the flat output row
+    //
+    // GOTCHAS that govern this code:
+    //   - `const x = row.<alias>` does NOT auto-unwrap .result; you must
+    //     use the `unwrap()` helper. (Templates `{{alias.field}}` and
+    //     direct chained access `row.<alias>.<field>` DO auto-unwrap, but
+    //     once you assign to a const you've captured the raw wrapper.)
+    //   - generic_http_request response: status_code/ok/data live at
+    //     result.<field>, body of the actual HTTP response is at result.data.
+    //   - HARVEST 200-OK LIES: when Harvest is rate-limiting, HTTP status
+    //     is 200 but body has { error: "Too many queued requests (code_22)",
+    //     status: 429, data: null }. Always check element exists, not just
+    //     status_code, when grading harvest success.
+    //   - Harvest's /linkedin/company response puts addresses in
+    //     element.locations[] (an array, with one entry having
+    //     headquarter:true), NOT element.headquarter. Use locations[].
+    //   - Apollo's organization.linkedin_url is at result.data.organization.
+    //
+    // The verdict shape (`return {...}`) is the per-row CSV output. Order
+    // matches the recipe's property declaration order.
+    // ----------------------------------------------------------------------
+    {
+      "alias": "verdict",
+      "tool": "run_javascript",
+      "operation": "run_javascript",
+      "payload": {
+        "code": "function unwrap(x) { if (!x || typeof x !== 'object') return x; if ('result' in x && typeof x.result === 'object' && x.result !== null) { var r = x.result; if (r && typeof r === 'object' && r.meta && r.meta.executor === 'run_javascript' && 'data' in r) { return r.data; } return r; } return x; } const inputs = unwrap(row.inputs) || {}; const harvestUrlStep = unwrap(row.harvest_url) || {}; const lookupResp = unwrap(row.lookup) || {}; const harvestResp = unwrap(row.harvest) || {}; const classifyResp = unwrap(row.classify) || {}; const linkedin_url = harvestUrlStep.linkedin_url || null; const linkedin_url_source = harvestUrlStep.has_linkedin ? 'apollo_tier1' : 'none'; const harvestBody = (harvestResp.data && typeof harvestResp.data === 'object') ? harvestResp.data : null; const harvestRateLimited = !!(harvestBody && harvestBody.error && /code_22/.test(String(harvestBody.error))); const element = (harvestBody && harvestBody.element && typeof harvestBody.element === 'object') ? harvestBody.element : null; const ec = element && typeof element.employeeCount === 'number' ? element.employeeCount : null; const employee_source = (ec !== null) ? 'harvest_linkedin_exact' : 'none'; const locs = (element && Array.isArray(element.locations)) ? element.locations : []; let hq = locs.find(function(l) { return l && l.headquarter === true; }); if (!hq) hq = locs[0] || null; const parsed = (hq && hq.parsed) || {}; const street = (hq && hq.line1) || null; const city = parsed.city || (hq && hq.city) || null; const stateRaw = parsed.state || (hq && hq.geographicArea) || null; const zip = (hq && hq.postalCode) || null; const country = parsed.countryCode || (hq && hq.country) || null; const US_STATES = {'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY','district of columbia':'DC'}; const CA_PROVINCES = {'alberta':'AB','british columbia':'BC','manitoba':'MB','new brunswick':'NB','newfoundland and labrador':'NL','nova scotia':'NS','ontario':'ON','prince edward island':'PE','quebec':'QC','saskatchewan':'SK','northwest territories':'NT','nunavut':'NU','yukon':'YT'}; let state = null; if (stateRaw) { const lower = String(stateRaw).toLowerCase().trim(); if (country === 'US') { state = US_STATES[lower] || (stateRaw.length === 2 ? String(stateRaw).toUpperCase() : null); } else if (country === 'CA') { state = CA_PROVINCES[lower] || (stateRaw.length === 2 ? String(stateRaw).toUpperCase() : null); } else { state = null; } } const harvestName = element && element.name ? String(element.name).trim() : null; const lookupOrg = (lookupResp.data && lookupResp.data.organization) || null; const lookupName = lookupOrg && (lookupOrg.name || lookupOrg.company_name) ? String(lookupOrg.name || lookupOrg.company_name).trim() : null; const company_name = harvestName || lookupName || inputs.company_name_input || null; const classifyObj = classifyResp.object || {}; const company_type = classifyObj.company_type || 'Other'; const company_type_reasoning = classifyObj.company_type_reasoning || null; const reasonParts = []; if (!linkedin_url) reasonParts.push('No LinkedIn URL from Apollo lookup.'); if (linkedin_url && harvestRateLimited) reasonParts.push('Harvest rate-limited (code_22). Re-run with tools/retry_harvest_chunked.py.'); if (linkedin_url && !harvestRateLimited && !element) reasonParts.push('Harvest returned no LinkedIn element body.'); if (linkedin_url && element && ec === null) reasonParts.push('Harvest returned no employee_count.'); if (linkedin_url && element && !hq) reasonParts.push('No HQ location in Harvest payload.'); if (company_type_reasoning) reasonParts.push(company_type_reasoning); const reasoning = reasonParts.length ? reasonParts.join(' ') : 'All fields populated from Harvest LinkedIn payload.'; return { company_name: company_name, domain: inputs.domain_clean, company_linkedin_url: linkedin_url, employee_count: ec, street: street, city: city, state: state, zip: zip, country: country, company_type: company_type, reasoning: reasoning, employee_source: employee_source, linkedin_url_source: linkedin_url_source, harvest_rate_limited: harvestRateLimited, domain_input_raw: inputs.domain_input_raw };"
+      }
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+# Acme SaaS — account enrichment recipe
+#
+# This is the "recipe" that compiles into a Deepline playbook. It declares
+# what to enrich, how to define each property so the model gets it right,
+# and what shape the output should take.
+#
+# To run this:
+#   1. Invoke `claude → /crm-cleanup` from the repo root.
+#   2. When asked what to enrich, paste the property names + descriptions
+#      from this file verbatim.
+#   3. The skill compiles `tmp/playbook.jsonc` from your descriptions and
+#      runs `deepline enrich` against `examples/acme-saas/input.csv`.
+#
+# This file is the *recipe* (declarative); the runtime artifact is the
+# generated `tmp/playbook.jsonc` (Deepline-native).
+
+name: acme-saas-account-cleanup
+description: >
+  Account-side cleanup for Acme SaaS. Filters CRM accounts to ideal/
+  acceptable tiers; flags acquired companies for rerouting; drops dead
+  domains.
+
+inputs:
+  - domain
+  - company_name
+
+properties:
+  - name: industry
+    description: >
+      Industry classification. One of: B2B SaaS, FinTech, E-commerce,
+      Services, Hardware, Other. Pick the closest match based on what the
+      company sells. "B2B SaaS" should be reserved for companies that sell
+      software-as-a-service primarily to business customers (not consumers).
+      Marketplaces, payment infrastructure, and developer tools count as
+      B2B SaaS if their primary buyer is a business. Conservative — when
+      uncertain between B2B SaaS and Services, prefer Services.
+    type: string
+    enum: [B2B SaaS, FinTech, E-commerce, Services, Hardware, Other]
+
+  - name: employee_count_tier
+    description: >
+      Approximate company size bucket: "1-50", "51-500", or "501+". Use
+      LinkedIn employee count when available; fall back to web research
+      (Crunchbase, About page, press releases). When the LinkedIn count
+      lands exactly on a boundary (e.g. 501 employees), bucket as the
+      higher tier.
+    type: string
+    enum: ["1-50", "51-500", "501+"]
+
+  - name: is_acquired
+    description: >
+      Has this company been acquired by or merged into a structurally
+      different parent company? Default to false on weak evidence — this
+      is a hard-drop signal, so false-positives waste real opportunity.
+      Distinguish acquisition from a DBA/rebrand (same legal entity, new
+      name) — those are NOT acquired. A subsidiary that retains
+      independent procurement (e.g. GitHub under Microsoft) is borderline;
+      mark is_acquired=true only when the parent has clearly absorbed the
+      company's tech-stack decisions.
+    type: boolean
+
+  - name: acquirer_name
+    description: >
+      When is_acquired=true, the parent company's primary brand name.
+      Empty string when is_acquired=false.
+    type: ["string", "null"]
+
+  - name: pitch
+    description: >
+      One sentence describing what the company sells. Plain English, ≤25
+      words. Skip marketing fluff ("revolutionary", "best-in-class") —
+      focus on what the buyer actually gets.
+    type: string
+
+  - name: reasoning
+    description: >
+      1–2 sentences citing specific evidence behind the most surprising
+      verdict on this row (e.g. "is_acquired=true because Salesforce
+      acquired Slack in July 2021 for $27.7B"). For clean, in-target rows,
+      a brief "no edge cases — clean independent B2B SaaS" is fine.
+    type: string
+
+# Output column order (the enriched CSV writes these left-to-right after
+# the input domain + company_name columns):
+output_order:
+  - industry
+  - employee_count_tier
+  - is_acquired
+  - acquirer_name
+  - pitch
+  - reasoning
+
+# What this recipe is NOT
+# ──────────────────────
+# Single AI research call per row. No provider waterfalls (Lusha → PDL →
+# Crustdata → Apollo), no Latitude-managed prompts, no manual QA loop,
+# no per-customer scoring layer. Production-scale recipes that Sculpted
+# runs for clients add all four — see the repo README for the agency-mode
+# upsell context.
+#
+# Acme uses this single-call recipe because: (1) their list is small
+# (low-thousands of rows, not hundreds-of-thousands), (2) the properties
+# they care about are all extractable from public web research, and (3)
+# they have ground-truth in their existing closed-won deals to grade
+# against (`expected-output.csv` is a snapshot of that grading set).

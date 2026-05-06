@@ -45,6 +45,70 @@ from runner.deepline_runner import run_enrichment
 # set a key in .env).
 _PLACEHOLDER_RE = re.compile(r"<([A-Z][A-Z0-9_]+)>")
 
+# Threshold above which we trigger an auto chunked-retry pass. Harvest's
+# rate-limiter masks itself as HTTP 200 with body.error="code_22" — a single
+# transient hit isn't worth a retry, but two or more usually means the
+# entire batch overflowed the per-key concurrency cap.
+RATE_LIMIT_AUTO_RETRY_THRESHOLD = 2
+
+
+def detect_harvest_rate_limit(enriched_csv: pathlib.Path,
+                              harvest_alias: str = "harvest") -> tuple[int, int]:
+    """Scan the enriched CSV's harvest column and return
+    (n_rate_limited, n_total_with_url). Counts rows where Harvest's body
+    contained the code_22 rate-limit error — these are recoverable via
+    tools/retry_harvest_chunked.py."""
+    import csv
+    import json
+
+    n_rate_limited = 0
+    n_with_url = 0
+    try:
+        with open(enriched_csv, newline="") as f:
+            for row in csv.DictReader(f):
+                blob = row.get(harvest_alias) or ""
+                if not blob:
+                    continue
+                try:
+                    parsed = json.loads(blob)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                result = parsed.get("result") if isinstance(parsed, dict) else None
+                if not isinstance(result, dict):
+                    continue
+                # Only count rows that had a real fetch (not the "?url=missing" sentinel)
+                final_url = result.get("final_url") or result.get("requested_url") or ""
+                if "url=missing" in final_url:
+                    continue
+                n_with_url += 1
+                body = result.get("data") or {}
+                err = body.get("error") if isinstance(body, dict) else ""
+                if err and "code_22" in str(err):
+                    n_rate_limited += 1
+    except FileNotFoundError:
+        pass
+    return n_rate_limited, n_with_url
+
+
+def auto_chunked_retry(enriched_csv: pathlib.Path,
+                       compiled_playbook: pathlib.Path,
+                       chunk_size: int = 5,
+                       delay_sec: int = 2) -> int:
+    """Invoke tools/retry_harvest_chunked.py as a subprocess. Returns its
+    exit code (0 on success). Output streams to the parent's stdout."""
+    import subprocess
+
+    script = pathlib.Path(__file__).resolve().parent / "retry_harvest_chunked.py"
+    cmd = [
+        sys.executable, str(script),
+        "--enriched", str(enriched_csv),
+        "--playbook-compiled", str(compiled_playbook),
+        "--chunk-size", str(chunk_size),
+        "--delay-sec", str(delay_sec),
+    ]
+    print(f"  → {' '.join(cmd)}")
+    return subprocess.call(cmd)
+
 
 def compile_playbook(src_path: pathlib.Path, dst_path: pathlib.Path) -> dict:
     """Substitute env-var placeholders in the playbook and write the compiled
@@ -96,6 +160,10 @@ def main() -> int:
         "--timeout", type=int, default=1800,
         help="Hard timeout (seconds) before the run is killed.",
     )
+    parser.add_argument(
+        "--no-auto-retry", action="store_true",
+        help="Skip the auto chunked-retry pass when Harvest rate-limit is detected.",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("DEEPLINE_API_KEY"):
@@ -138,6 +206,30 @@ def main() -> int:
             print(f"Session UI: {result['session_url']}")
         if result.get("credits_used") is not None:
             print(f"Credits used: {result['credits_used']}")
+
+        # Detect Harvest rate-limit (code_22) — Harvest masks 429s as 200 OK
+        # with body.error="Too many queued requests (code_22)". If enough
+        # rows tripped this, run tools/retry_harvest_chunked.py automatically.
+        n_rl, n_url = detect_harvest_rate_limit(args.output)
+        if n_rl > 0:
+            print(f"\nHarvest rate-limit detected: {n_rl}/{n_url} rows hit code_22.")
+            if args.no_auto_retry:
+                print("  (--no-auto-retry set; skipping. Run "
+                      "`python tools/retry_harvest_chunked.py` manually to recover.)")
+            elif n_rl >= RATE_LIMIT_AUTO_RETRY_THRESHOLD:
+                print(f"  Triggering chunked retry (threshold: "
+                      f"{RATE_LIMIT_AUTO_RETRY_THRESHOLD})...\n")
+                rc = auto_chunked_retry(args.output, compiled_path)
+                if rc != 0:
+                    print(f"  retry exit code {rc}", file=sys.stderr)
+                else:
+                    # Re-detect to report final state
+                    n_rl_after, _ = detect_harvest_rate_limit(args.output)
+                    print(f"\nPost-retry: {n_rl_after}/{n_url} rows still rate-limited.")
+            else:
+                print(f"  Below auto-retry threshold ({RATE_LIMIT_AUTO_RETRY_THRESHOLD}). "
+                      f"Run `python tools/retry_harvest_chunked.py` to recover.")
+
         # Always emit a flat-column companion next to the deepline-native CSV
         try:
             sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
