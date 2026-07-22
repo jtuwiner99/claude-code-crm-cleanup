@@ -23,7 +23,7 @@ def render_terminal(metrics: dict) -> str:
     ai = metrics.get("ai_baseline")
     if ai:
         lines.append(
-            f"  [ESTIMATE — NOT VERIFIED] Qualified ~ {ai['qualified_estimate'] * 100:.0f}%  "
+            f"  [ESTIMATE: NOT VERIFIED] Qualified ~ {ai['qualified_estimate'] * 100:.0f}%  "
             f"(single-pass guess, accuracy unmeasured)"
         )
     else:
