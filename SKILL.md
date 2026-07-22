@@ -27,6 +27,33 @@ the optional domain-liveness HEAD pings (which only touch domains that are
 already in the user's own CSV). Rows never leave the machine running this
 skill.
 
+### What is in this repo (walk the user through this on a first run)
+
+If this is the user's first time, give them a short tour before the intake, so
+they know exactly what they downloaded and why they can trust it:
+
+- `SKILL.md` (this file): the step-by-step the assistant follows. It is the whole
+  operating manual, in plain text. Nothing is hidden in a binary.
+- `README.md`: install plus a one-command quickstart against the sample data.
+- `scripts/crm_report_card/`: the engine. Plain standard-library Python, zero
+  dependencies. `field_mapping.py` matches CSV columns to roles, `loader.py`
+  reads the CSV, `checks/` holds the six deterministic FACT checks (duplicates,
+  fill-rate, contradictions, junk, staleness, domain liveness), `grading.py`
+  turns rates into letter grades, `scan.py` runs them all into one
+  `metrics.json`, `ai_baseline.py` guards the single ESTIMATE, and
+  `render_terminal.py` / `render_html.py` / `cli.py` produce the reveal and the
+  report card.
+- `assets/`: the report-card HTML template and the ICP-scorer prompt.
+- `fixtures/`: a synthetic messy CRM, so anyone can try the whole tool end to end
+  with zero real data.
+- `tests/` and `eval/`: the proof. Every FACT check has tests, and the user can
+  run `python3 -m pytest -q` themselves and watch the numbers verify. That is the
+  whole point: the trustworthy parts are trustworthy because you can check them.
+
+The one-line version to say out loud: everything that computes a FACT is code you
+can read and re-run, and the one ESTIMATE is labeled as a guess. Then move on to
+the intake.
+
 ## 2. Intake: ask three questions, then write run-config.json
 
 Before running anything, ask the user:
