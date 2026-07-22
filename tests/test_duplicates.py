@@ -26,3 +26,21 @@ def test_fuzzy_name_dupes_when_no_domain():
 
 def test_no_dupes_empty():
     assert check_duplicates([])["duplicate_rate"] == 0.0
+
+
+def test_suffix_variants_are_dupes():
+    recs = [
+        {"record_id": "0", "domain": "", "company_name": "Acme"},
+        {"record_id": "1", "domain": "", "company_name": "Acme Inc"},
+        {"record_id": "2", "domain": "", "company_name": "Acme Incorporated"},
+        {"record_id": "3", "domain": "", "company_name": "Acme LLC"},
+    ]
+    assert check_duplicates(recs)["fuzzy_name_dupes"] == 3
+
+
+def test_distinct_companies_not_dupes():
+    recs = [
+        {"record_id": "0", "domain": "", "company_name": "Northwind Traders"},
+        {"record_id": "1", "domain": "", "company_name": "Southwind Freight"},
+    ]
+    assert check_duplicates(recs)["fuzzy_name_dupes"] == 0

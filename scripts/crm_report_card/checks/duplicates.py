@@ -3,11 +3,19 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
-_FUZZY_THRESHOLD = 0.89
+_FUZZY_THRESHOLD = 0.90
+
+_LEGAL_SUFFIXES = {
+    "inc", "incorporated", "llc", "ltd", "limited", "corp", "corporation",
+    "co", "company", "gmbh", "plc", "sa", "ag", "srl", "bv", "nv", "pty",
+    "llp", "lp",
+}
 
 
 def _norm_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+    tokens = re.sub(r"[^a-z0-9]+", " ", name.lower()).split()
+    tokens = [t for t in tokens if t not in _LEGAL_SUFFIXES]
+    return " ".join(tokens).strip()
 
 
 def check_duplicates(records: list[dict]) -> dict:
