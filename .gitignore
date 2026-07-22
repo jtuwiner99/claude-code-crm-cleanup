@@ -1,0 +1,15 @@
+# SDD scratch (task briefs/reports/ledger) - internal, never shipped.
+.superpowers/
+
+# Built bundle output (Task 18).
+dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# Per-run artifacts created when someone runs the CLI. Legitimately contain
+# a customer's own CRM data; never belong in this public repo.
+/metrics.json
+/crm-report-card.html
+/run-config.json
