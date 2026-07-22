@@ -1,0 +1,5 @@
+record_id,Company,Website,Contact,Email,Employees,LastActivity
+1,Acme Inc,acme.com,Jane Doe,jane@acme.com,120,2026-06-01
+2,Acme Incorporated,acme.com,John Roe,john@acme.com,120,2025-01-15
+3,Test Co,,QA Test,test@test.com,5,2026-07-01
+4,Globex,globex.io,,info@globex.io,4000,2021-03-02
