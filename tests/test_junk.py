@@ -22,3 +22,22 @@ def test_generic_contact_and_test_record():
 def test_clean_record_not_junk():
     recs = [{"record_id": "0", "domain": "acme.com", "company_name": "Acme", "email": "jane@acme.com"}]
     assert check_junk(recs)["total_junk"] == 0
+
+
+def test_legit_names_with_embedded_tokens_not_junk():
+    recs = [
+        {"record_id": "0", "domain": "attestation.com", "company_name": "Attestation Inc", "email": "amy@attestation.com"},
+        {"record_id": "1", "domain": "democracylabs.org", "company_name": "Democracy Labs", "email": "ben@democracylabs.org"},
+    ]
+    out = check_junk(recs)
+    assert out["test_records"] == 0
+    assert out["total_junk"] == 0
+
+
+def test_real_test_records_still_flagged():
+    recs = [
+        {"record_id": "0", "domain": "acme.com", "company_name": "Test Co", "email": "jane@acme.com"},
+        {"record_id": "1", "domain": "acme.com", "company_name": "Acme", "email": "demo@example.com"},
+    ]
+    out = check_junk(recs)
+    assert out["test_records"] == 2

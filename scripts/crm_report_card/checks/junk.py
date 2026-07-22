@@ -1,10 +1,12 @@
 """Junk detection: free-mail-as-company, generic contacts, test records."""
 from __future__ import annotations
 
+import re
+
 _FREE_MAIL = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com",
               "icloud.com", "protonmail.com", "gmx.com", "mail.com", "yandex.com"}
 _GENERIC_LOCALPARTS = {"info", "sales", "support", "admin", "contact", "hello", "office"}
-_TEST_TOKENS = ("test", "demo", "asdf", "example")
+_TEST_PATTERN = re.compile(r"\b(?:test|demo|asdf|example)\b")
 
 
 def _email_domain(email: str) -> str:
@@ -32,7 +34,7 @@ def check_junk(records: list[dict]) -> dict:
             generic += 1
             is_junk = True
         blob = f"{name} {email} {domain}"
-        if any(tok in blob for tok in _TEST_TOKENS):
+        if _TEST_PATTERN.search(blob):
             test += 1
             is_junk = True
         if is_junk:
