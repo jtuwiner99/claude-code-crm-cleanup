@@ -1,5 +1,7 @@
+import json, os
 from datetime import date
 from crm_report_card.config import RunConfig
+from crm_report_card.loader import load_records
 from crm_report_card.scan import run_scan
 
 
@@ -22,3 +24,16 @@ def test_run_scan_shape_and_grades():
     assert metrics["ai_baseline"] is None
     assert metrics["decay"]["annual_rot_rate"] == 0.30
     assert metrics["product_name"] == "The CRM Report Card"
+
+
+FIXTURE = os.path.join(os.path.dirname(__file__), "..", "fixtures", "messy-crm-sample.csv")
+EXPECTED = os.path.join(os.path.dirname(__file__), "..", "fixtures", "messy-crm-sample.expected.json")
+
+
+def test_golden_fixture_matches_expected():
+    records, _ = load_records(os.path.normpath(FIXTURE), {})
+    metrics = run_scan(records, _cfg(), today=date(2026, 7, 22), fetcher=lambda d: (200, False))
+    expected = json.loads(open(os.path.normpath(EXPECTED)).read())
+    assert metrics["counts"]["records"] == expected["counts"]["records"]
+    assert metrics["facts"]["duplicates"]["duplicate_records"] == expected["duplicate_records"]
+    assert metrics["overall_grade"] == expected["overall_grade"]

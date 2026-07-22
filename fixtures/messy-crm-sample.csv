@@ -1,5 +1,41 @@
-record_id,Company,Website,Contact,Email,Employees,LastActivity
-1,Acme Inc,acme.com,Jane Doe,jane@acme.com,120,2026-06-01
-2,Acme Incorporated,acme.com,John Roe,john@acme.com,120,2025-01-15
-3,Test Co,,QA Test,test@test.com,5,2026-07-01
-4,Globex,globex.io,,info@globex.io,4000,2021-03-02
+record_id,Company,Website,Contact,Email,Employees,Last Activity
+1,Brightloop Inc,brightloop.com,Jane Ross,jane.ross@brightloop.com,300,2026-06-01
+2,Brightloop Incorporated,brightloop.com,John Mays,john.mays@brightloop.com,300,2026-05-15
+3,Brightloop LLC,brightloop.com,Sue Chen,sue.chen@brightloop.com,300,2026-04-20
+4,Cascade Robotics,,Mia Farrow,mia@cascaderoboticshq.com,45,2026-06-10
+5,Cascade Robotic,,Tom Wexler,tom@cascaderoboticco.com,45,2026-05-01
+6,Vertex Analytics,vertexanalytics.com,Ana Brooks,ana@vertexanalytics.com,3,2026-06-01
+7,Vertex Analytics,vertexanalytics.com,Ben Ortiz,ben@vertexanalytics.com,3,2026-06-02
+8,Vertex Analytics,vertexanalytics.com,Cara Diaz,cara@vertexanalytics.com,3,2026-06-03
+9,Vertex Analytics,vertexanalytics.com,Drew Kim,drew@vertexanalytics.com,3,2026-06-04
+10,Solo Consulting,gmail.com,Pat Ng,patrick.ng@gmail.com,1,2026-06-01
+11,Freelance Design Co,yahoo.com,Uma Patel,uma.d@yahoo.com,1,2026-05-01
+12,Northwind Logistics,northwindlogistics.com,,info@northwindlogistics.com,80,2026-06-01
+13,Harborline Freight,harborlinefreight.com,,sales@harborlinefreight.com,60,2026-05-20
+14,Ridgecrest Supply,ridgecrestsupply.com,,support@ridgecrestsupply.com,50,2026-04-15
+15,Meridian Textiles,meridiantextiles.com,,admin@meridiantextiles.com,40,2026-03-10
+16,Demo Corp,demo-corp.com,QA Bot,demo@example.com,10,2026-06-01
+17,Test Company,test-company.io,Tester One,test@test-company.io,10,2026-06-02
+18,Asdf Ventures,asdf.com,Asdf User,asdf@asdf.com,10,2026-06-03
+19,Palisade Freight,palisadefreight.com,Nora Vance,,90,2026-06-01
+20,Anchorpoint Media,anchorpointmedia.com,Liam Cross,,70,2026-05-01
+21,Summit Gearworks,summitgearworks.com,Ivy Chan,,65,2026-04-01
+22,Copperline Foods,copperlinefoods.com,Reid Anders,,55,2026-03-01
+23,Fernbridge Analytics,fernbridgeanalytics.com,Dana Wolfe,dana@fernbridgeanalytics.com,30,2019-02-14
+24,Ironclad Systems,ironcladsystems.com,Marco Lin,marco@ironcladsystems.com,25,2020-08-30
+25,Coastal Metrics,coastalmetrics.com,Priya Shah,priya@coastalmetrics.com,20,2021-11-05
+26,Bluepeak Robotics,bluepeakrobotics.com,Oscar Reyes,oscar@bluepeakrobotics.com,35,2022-06-19
+27,Wraithcode Labs,wraithcodelabs.com,Nina Volkov,nina@wraithcodelabs.com,15,2023-09-01
+28,Fallowfield Data,fallowfielddata.com,Tariq Noor,tariq@fallowfielddata.com,45,2024-12-31
+29,Silverash Analytics,silverashanalytics.com,Grace Kim,grace@silverashanalytics.com,28,
+30,Northfield SaaS,northfieldsaas.com,Evan Marsh,evan@northfieldsaas.com,220,2026-07-01
+31,Brightgate Software,brightgatesoftware.com,Zara Malik,zara@brightgatesoftware.com,180,2026-07-05
+32,Cobalt Metrics,cobaltmetrics.io,Leo Stanton,leo@cobaltmetrics.io,95,2026-06-28
+33,Pinebrook Cloud,pinebrookcloud.com,Hana Suzuki,hana@pinebrookcloud.com,340,2026-07-10
+34,Rivermark Analytics,rivermarkanalytics.com,Owen Blake,owen@rivermarkanalytics.com,60,2026-07-12
+35,Lattice Devtools,latticedevtools.com,Sofia Reyes,sofia@latticedevtools.com,130,2026-06-15
+36,Greybridge Systems,greybridgesystems.com,Marcus Cole,marcus@greybridgesystems.com,75,2026-07-02
+37,Aldermoor Tech,aldermoortech.com,Fatima Rashid,fatima@aldermoortech.com,410,2026-06-30
+38,Kestrel Analytics,kestrelanalytics.io,Diego Fuentes,diego@kestrelanalytics.io,150,2026-07-08
+39,Thornfield Data,thornfielddata.com,Wren Ashby,wren@thornfielddata.com,88,2026-07-15
+40,Copperhall Software,copperhallsoftware.com,Iris Novak,iris@copperhallsoftware.com,200,2026-07-18
