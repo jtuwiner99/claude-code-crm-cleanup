@@ -14,8 +14,11 @@ _LEGAL_SUFFIXES = {
 
 def _norm_name(name: str) -> str:
     tokens = re.sub(r"[^a-z0-9]+", " ", name.lower()).split()
-    tokens = [t for t in tokens if t not in _LEGAL_SUFFIXES]
-    return " ".join(tokens).strip()
+    stripped = list(tokens)
+    while stripped and stripped[-1] in _LEGAL_SUFFIXES:
+        stripped.pop()
+    result = " ".join(stripped).strip()
+    return result or " ".join(tokens).strip()
 
 
 def check_duplicates(records: list[dict]) -> dict:

@@ -44,3 +44,21 @@ def test_distinct_companies_not_dupes():
         {"record_id": "1", "domain": "", "company_name": "Southwind Freight"},
     ]
     assert check_duplicates(recs)["fuzzy_name_dupes"] == 0
+
+
+def test_leading_legal_word_not_stripped():
+    recs = [
+        {"record_id": "0", "domain": "", "company_name": "Co Star"},
+        {"record_id": "1", "domain": "", "company_name": "Star"},
+    ]
+    # 'co' is a leading word here, not a trailing legal suffix; must not merge these
+    assert check_duplicates(recs)["fuzzy_name_dupes"] == 0
+
+
+def test_all_suffix_name_falls_back():
+    recs = [
+        {"record_id": "0", "domain": "", "company_name": "Company Inc"},
+        {"record_id": "1", "domain": "", "company_name": "Company Inc"},
+    ]
+    # all-suffix name falls back to full normalized form instead of empty -> still a dupe
+    assert check_duplicates(recs)["fuzzy_name_dupes"] == 1
