@@ -13,3 +13,7 @@ __pycache__/
 /metrics.json
 /crm-report-card.html
 /run-config.json
+
+# Test runner + OS cruft.
+.pytest_cache/
+.DS_Store
