@@ -29,3 +29,13 @@ def test_merge_sets_block():
     out = merge_ai_baseline(metrics, {"qualified_estimate": 0.3, "reasons": ["x"], "sample_size": 5})
     assert out["ai_baseline"]["verified"] is False
     assert out["ai_baseline"]["qualified_estimate"] == 0.3
+
+
+def test_validate_rejects_bool_estimate():
+    with pytest.raises(ValueError):
+        validate_ai_baseline({"qualified_estimate": True, "reasons": ["x"], "sample_size": 10})
+
+
+def test_validate_rejects_bool_sample_size():
+    with pytest.raises(ValueError):
+        validate_ai_baseline({"qualified_estimate": 0.3, "reasons": ["x"], "sample_size": True})
