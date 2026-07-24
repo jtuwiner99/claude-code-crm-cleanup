@@ -5,10 +5,27 @@ description: Scan a CRM CSV export for duplicates, missing critical fields, cont
 
 # The CRM Report Card
 
-This file is your playbook for running the tool for a user. Work through it
-**one step at a time**, out loud, confirming each step before the next. Never
-dump the whole process at once or run ahead. The experience should feel like a
-guided session, not a form.
+This file is your playbook for running the tool for a user.
+
+**Pace: ONE thing per message. This is the most important rule, do not break it.**
+Present a single checkpoint, then STOP and wait for their reply before the next.
+Do NOT combine the field mapping, the critical fields, the ICP, and the signal
+menu into one message. Do not send more than one question at a time. A real
+session is a short back-and-forth, not a wall of text they have to scroll. If the
+message you are about to send covers more than one checkpoint below, stop and
+split it up.
+
+The checkpoints, in order, each its own message, each waiting for their reply:
+1. Exports + companies / contacts / both + portal ID.
+2. Field mapping Part 1 (the standard auto-mapped properties): approve or override.
+3. Field mapping Part 2 (what we also produce): a brief heads-up.
+4. Critical fields Part 3: approve or edit the proposed list.
+5. The ICP: propose it, they confirm or tweak.
+6. Their 3 to 5 best customers.
+7. The signal menu, then the go.
+
+Never show a later checkpoint before the earlier one is settled. The experience
+should feel like a guided session, not a form.
 
 ## 1. Start here: tell the user what this is (before anything else)
 
@@ -191,6 +208,9 @@ If a core role did not map (for example, no email or contact name on a companies
 export), just say so and move on. Do not invent one. If they know the correct
 column for an unmapped role, take it as an override in `field_mapping`.
 
+**Stop here.** Get their yes on the mapping (and any overrides) before you show
+Part 2. Do not continue in the same message.
+
 **Part 2: the other information we produce, and where it could go.**
 We also produce things a static export cannot contain. Some are free and already
 on the card: **domain liveness** (live / bot-blocked / dead). Others need a live
@@ -200,14 +220,16 @@ whether the size field is filled), **job-change / still-employed tracking**, and
 do they have a field for it, want us to create one, or just see it on the card?
 Be honest that in this free audit these appear as results and locked rows only;
 actually writing a value back into their CRM, or creating a property, is the
-done-for-you work Jacob sets up. Never fake a number for these here.
+done-for-you work Jacob sets up. Never fake a number for these here. Keep Part 2
+short. **Stop here** and let them react before Part 3.
 
 **Part 3: pick the extra fields that matter to them (their custom properties).**
 Ask which OTHER columns in their export are important enough that a blank or
 wrong value makes the record close to useless. Companies often name Industry,
 Company owner, Lifecycle stage, or a custom field. Add each one by its exact
 column name to `critical_properties`; the fill-rate FACT then covers it too.
-This is how they bring their own properties into the grade.
+This is how they bring their own properties into the grade. Propose the list as a
+short table and **stop** for their approve/edit before moving on to the ICP.
 
 Then write a `run-config.json` for **each object** they chose (companies and/or
 contacts). Each carries that object's `object_type` and `critical_properties`,
