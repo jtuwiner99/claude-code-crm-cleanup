@@ -47,7 +47,7 @@ def test_render_html_labels_and_cta():
     assert "company_type" in html            # personalized locked row
     assert "mailto:jacob@sculpted.agency" in html
     assert "cal.example/jacob" in html
-    assert "OVERALL" in html.upper()
+    assert "GRADE" in html.upper()
     assert "Dead domains" in html
 
 

@@ -33,4 +33,4 @@ def test_scan_then_render(tmp_path, capsys):
     rc2 = main(["render", "--metrics", metrics_path, "--config", cfg, "--out", html_path])
     assert rc2 == 0
     html = open(html_path).read()
-    assert "Work with Jacob" in html
+    assert "Book a free session" in html
