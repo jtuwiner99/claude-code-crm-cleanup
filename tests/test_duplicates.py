@@ -12,6 +12,14 @@ def test_exact_domain_dupes():
     assert out["exact_domain_dupes"] == 1
     assert out["duplicate_records"] == 1
     assert abs(out["duplicate_rate"] - 1 / 3) < 1e-9
+    assert len(out["offending_ids"]) == out["duplicate_records"]
+    assert out["offending_ids"] == ["1"]
+    assert len(out["examples"]) <= 12
+    assert len(out["examples"]) == 1
+    ex = out["examples"][0]
+    assert set(ex.keys()) == {"record_id", "label", "detail"}
+    assert ex["record_id"] == "1"
+    assert "acme.com" in ex["detail"]
 
 
 def test_fuzzy_name_dupes_when_no_domain():
@@ -22,10 +30,18 @@ def test_fuzzy_name_dupes_when_no_domain():
     out = check_duplicates(recs)
     assert out["fuzzy_name_dupes"] == 1
     assert out["duplicate_records"] == 1
+    assert len(out["offending_ids"]) == out["duplicate_records"]
+    assert out["offending_ids"] == ["1"]
+    assert len(out["examples"]) == 1
+    assert out["examples"][0]["record_id"] == "1"
+    assert "Northwind Traders" in out["examples"][0]["detail"]
 
 
 def test_no_dupes_empty():
-    assert check_duplicates([])["duplicate_rate"] == 0.0
+    out = check_duplicates([])
+    assert out["duplicate_rate"] == 0.0
+    assert out["offending_ids"] == []
+    assert out["examples"] == []
 
 
 def test_suffix_variants_are_dupes():
@@ -69,6 +85,8 @@ def test_contact_mode_unique_emails_same_domain_not_dupes():
     assert out["duplicate_records"] == 0
     assert out["exact_domain_dupes"] == 0
     assert out["fuzzy_name_dupes"] == 0
+    assert out["offending_ids"] == []
+    assert out["examples"] == []
 
 
 def test_contact_mode_repeated_email_is_dupe():
@@ -79,6 +97,11 @@ def test_contact_mode_repeated_email_is_dupe():
     out = check_duplicates(recs, object_type="contact")
     assert out["duplicate_records"] == 1
     assert abs(out["duplicate_rate"] - 0.5) < 1e-9
+    assert len(out["offending_ids"]) == out["duplicate_records"]
+    assert out["offending_ids"] == ["1"]
+    assert len(out["examples"]) == 1
+    assert out["examples"][0]["label"] == "jane@acme.com"
+    assert "jane@acme.com" in out["examples"][0]["detail"]
 
 
 def test_all_suffix_name_falls_back():

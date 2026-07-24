@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 _LIVE = {200, 301, 302, 307, 308}
 _BLOCKED = {401, 403, 429, 503}
 _UA = "Mozilla/5.0 (compatible; CRM-Report-Card/0.1)"
+_MAX_EXAMPLES = 12
 
 
 def classify(status, error: bool) -> str:
@@ -47,13 +48,33 @@ def check_liveness(records, fetcher=default_fetcher, max_domains=None, workers: 
         domains = domains[:max_domains]
 
     counts = {"live": 0, "bot_blocked": 0, "dead": 0}
+    classification: dict[str, str] = {}
     if domains:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            results = pool.map(lambda d: classify(*fetcher(d)), domains)
-        for bucket in results:
+            results = list(pool.map(lambda d: classify(*fetcher(d)), domains))
+        for dom, bucket in zip(domains, results):
             counts[bucket] += 1
+            classification[dom] = bucket
 
     checked = len(domains)
+
+    dead_domains = {dom for dom, bucket in classification.items() if bucket == "dead"}
+    offending_ids: list[str] = []
+    examples: list[dict] = []
+    example_domains_seen: set[str] = set()
+    for rec in records:
+        dom = (rec.get("domain") or "").strip().lower()
+        if dom in dead_domains:
+            rid = rec.get("record_id", "")
+            offending_ids.append(rid)
+            if dom not in example_domains_seen and len(examples) < _MAX_EXAMPLES:
+                example_domains_seen.add(dom)
+                examples.append({
+                    "record_id": rid,
+                    "label": dom,
+                    "detail": "no response",
+                })
+
     return {
         "checked": checked,
         "live": counts["live"],
@@ -61,4 +82,6 @@ def check_liveness(records, fetcher=default_fetcher, max_domains=None, workers: 
         "dead": counts["dead"],
         "live_rate": (counts["live"] / checked) if checked else 0.0,
         "dead_rate": (counts["dead"] / checked) if checked else 0.0,
+        "examples": examples,
+        "offending_ids": offending_ids,
     }

@@ -2,6 +2,8 @@
 from __future__ import annotations
 from collections import defaultdict
 
+_MAX_EXAMPLES = 12
+
 
 def _to_int(text: str):
     try:
@@ -20,16 +22,29 @@ def check_contradictions(records: list[dict]) -> dict:
             groups[dom].append(rec)
 
     bad_ids: set[str] = set()
-    examples: list[str] = []
+    offending_ids: list[str] = []
+    examples: list[dict] = []
     for dom, group in groups.items():
         contacts = {(r.get("email") or "").strip().lower() for r in group if (r.get("email") or "").strip()}
         sizes = [_to_int(r.get("company_size", "")) for r in group]
         size = next((s for s in sizes if s is not None), None)
         if size is not None and len(contacts) > size:
             for r in group:
-                bad_ids.add(r["record_id"])
-            if len(examples) < 5:
-                examples.append(f"{dom}: size says {size} but {len(contacts)} distinct contacts")
+                rid = r.get("record_id", "")
+                if rid not in bad_ids:
+                    bad_ids.add(rid)
+                    offending_ids.append(rid)
+            if len(examples) < _MAX_EXAMPLES:
+                examples.append({
+                    "record_id": group[0].get("record_id", ""),
+                    "label": dom,
+                    "detail": f"size says {size} but {len(contacts)} distinct contacts",
+                })
 
     count = len(bad_ids)
-    return {"count": count, "rate": (count / total) if total else 0.0, "examples": examples}
+    return {
+        "count": count,
+        "rate": (count / total) if total else 0.0,
+        "examples": examples,
+        "offending_ids": offending_ids,
+    }
