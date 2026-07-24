@@ -98,6 +98,13 @@ The grade is only as complete as the fields it sees, so **completeness matters
 more than volume**. Give them two options and let them pick. Lay out the honest
 trade before they choose.
 
+Also note whether they are exporting **companies or contacts**. You will record
+this as `object_type` (`"company"` or `"contact"`) in the run-config, and it
+genuinely changes the checks: on a contacts file, duplicates are keyed on
+**email** (so five real people at one company are not counted as duplicates),
+and the live-website check keys on each contact's **email domain**. Get this
+right, or a contacts file will grade as if it were a companies file.
+
 **Option A: CSV export (shares nothing, a little more manual).**
 The safe default. Nothing to trust anyone with.
 
@@ -203,6 +210,7 @@ details; the "Work with Jacob" offer is baked into the tool
 
 ```json
 {
+  "object_type": "contact",
   "icp_nl": "US-based B2B SaaS companies, 50 to 500 employees, modern tech stack",
   "critical_properties": ["company_size", "Industry", "Company owner"],
   "field_mapping": { "domain": "Company Domain Name", "last_activity": "Last Activity Date" },
@@ -210,7 +218,9 @@ details; the "Work with Jacob" offer is baked into the tool
 }
 ```
 
-`field_mapping` only needs entries for roles `auto_map` missed.
+`object_type` is `"company"` or `"contact"` (defaults to `"company"` if omitted,
+so always set it for a contacts export). `field_mapping` only needs entries for
+roles `auto_map` missed.
 `critical_properties` may be a canonical role (`company_size`, `email`, ...) OR
 the exact header of any custom column they care about (like `Industry`); the
 scan keeps and grades both. The full catalogue of default-mapped roles,
