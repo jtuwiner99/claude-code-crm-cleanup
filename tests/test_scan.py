@@ -62,6 +62,35 @@ def test_scan_from_files_checks_custom_critical_column(tmp_path):
     assert per_field["Industry"]["missing"] == 1
 
 
+def test_company_mode_scan_has_liveness_not_orphaned_or_email_format():
+    recs = [
+        {"record_id": "0", "domain": "acme.com", "company_name": "Acme", "email": "jane@acme.com", "company_size": "100", "last_activity": "2026-06-01"},
+    ]
+    metrics = run_scan(recs, _cfg(), today=date(2026, 7, 22), fetcher=lambda d: (200, False))
+    assert "liveness" in metrics["facts"]
+    assert "orphaned" not in metrics["facts"]
+    assert "email_format" not in metrics["facts"]
+    assert metrics["overall_grade"] in {"A", "B", "C", "D", "F"}
+
+
+def test_contact_mode_scan_has_orphaned_and_email_format_not_liveness():
+    recs = [
+        {"record_id": "0", "company_name": "Acme", "email": "jane@acme.com", "last_activity": "2026-06-01"},
+        {"record_id": "1", "company_name": "", "email": "not-an-email", "last_activity": "2026-06-01"},
+    ]
+    cfg = RunConfig(icp_nl="x", critical_properties=["email"], field_mapping={},
+                     contact_email="a@b.co", booking_url="https://x",
+                     favorite_customers=[], product_name="The CRM Report Card",
+                     object_type="contact")
+    metrics = run_scan(recs, cfg, today=date(2026, 7, 22), fetcher=lambda d: (200, False))
+    assert "orphaned" in metrics["facts"]
+    assert "email_format" in metrics["facts"]
+    assert "liveness" not in metrics["facts"]
+    assert metrics["facts"]["orphaned"]["orphaned_count"] == 1
+    assert metrics["facts"]["email_format"]["invalid_count"] == 1
+    assert metrics["overall_grade"] in {"A", "B", "C", "D", "F"}
+
+
 def test_scan_from_files_contact_mode_does_not_inflate_duplicates(tmp_path):
     csv_text = (
         "First Name,Company Domain Name,Email\n"

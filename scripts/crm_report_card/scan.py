@@ -10,6 +10,8 @@ from .checks.contradictions import check_contradictions
 from .checks.junk import check_junk
 from .checks.staleness import check_staleness
 from .checks.liveness import check_liveness, default_fetcher
+from .checks.orphaned import check_orphaned
+from .checks.email_format import check_email_format
 from .grading import grade_rate, overall_grade
 
 _ANNUAL_ROT = 0.30
@@ -21,24 +23,38 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
     contra = check_contradictions(records)
     junk = check_junk(records)
     stale = check_staleness(records, today=today)
-    live = check_liveness(records, fetcher=fetcher or default_fetcher)
 
     dup["grade"] = grade_rate(dup["duplicate_rate"])
     fill["grade"] = grade_rate(fill["overall_missing_rate"])
     contra["grade"] = grade_rate(contra["rate"])
     junk["grade"] = grade_rate(junk["junk_rate"])
     stale["grade"] = grade_rate(stale["stale_rate"])
-    live["grade"] = grade_rate(live["dead_rate"])
 
-    grades = [dup["grade"], fill["grade"], contra["grade"], junk["grade"], stale["grade"], live["grade"]]
+    facts = {
+        "duplicates": dup, "fill_rate": fill, "contradictions": contra,
+        "junk": junk, "staleness": stale,
+    }
+    grades = [dup["grade"], fill["grade"], contra["grade"], junk["grade"], stale["grade"]]
+
+    if cfg.object_type == "contact":
+        orphaned = check_orphaned(records)
+        email_format = check_email_format(records)
+        orphaned["grade"] = grade_rate(orphaned["orphaned_rate"])
+        email_format["grade"] = grade_rate(email_format["invalid_rate"])
+        facts["orphaned"] = orphaned
+        facts["email_format"] = email_format
+        grades += [orphaned["grade"], email_format["grade"]]
+    else:
+        live = check_liveness(records, fetcher=fetcher or default_fetcher)
+        live["grade"] = grade_rate(live["dead_rate"])
+        facts["liveness"] = live
+        grades.append(live["grade"])
+
     n = len(records)
     return {
         "product_name": cfg.product_name,
         "counts": {"records": n},
-        "facts": {
-            "duplicates": dup, "fill_rate": fill, "contradictions": contra,
-            "junk": junk, "staleness": stale, "liveness": live,
-        },
+        "facts": facts,
         "overall_grade": overall_grade(grades),
         "decay": {
             "annual_rot_rate": _ANNUAL_ROT,

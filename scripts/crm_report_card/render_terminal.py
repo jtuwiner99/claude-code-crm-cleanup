@@ -1,6 +1,17 @@
 """Render the live terminal reveal from a metrics dict."""
 from __future__ import annotations
 
+_FACT_REGISTRY = [
+    ("duplicates", "Duplicates", "duplicate_rate"),
+    ("fill_rate", "Missing critical fields", "overall_missing_rate"),
+    ("contradictions", "Internal contradictions", "rate"),
+    ("junk", "Junk records", "junk_rate"),
+    ("staleness", "Stale (12+ mo)", "stale_rate"),
+    ("liveness", "Dead domains", "dead_rate"),
+    ("orphaned", "Orphaned contacts", "orphaned_rate"),
+    ("email_format", "Invalid email format", "invalid_rate"),
+]
+
 
 def _pct(rate: float) -> str:
     return f"{rate * 100:.1f}%"
@@ -12,14 +23,17 @@ def render_terminal(metrics: dict) -> str:
     lines = [
         f"Scanning {n:,} records...",
         "",
-        f"  [FACT] Duplicates ........ {_pct(facts['duplicates']['duplicate_rate'])}  ({facts['duplicates']['grade']})",
-        f"  [FACT] Missing critical .. {_pct(facts['fill_rate']['overall_missing_rate'])}  ({facts['fill_rate']['grade']})",
-        f"  [FACT] Contradictions .... {_pct(facts['contradictions']['rate'])}  ({facts['contradictions']['grade']})",
-        f"  [FACT] Junk .............. {_pct(facts['junk']['junk_rate'])}  ({facts['junk']['grade']})",
-        f"  [FACT] Stale ............. {_pct(facts['staleness']['stale_rate'])}  ({facts['staleness']['grade']})",
-        f"  [FACT] Dead domains ...... {_pct(facts['liveness']['dead_rate'])}  "
-        f"(bot-blocked: {facts['liveness']['bot_blocked']})  ({facts['liveness']['grade']})",
     ]
+    for key, label, rate_key in _FACT_REGISTRY:
+        if key not in facts:
+            continue
+        pad = "." * max(1, 24 - len(label))
+        extra = ""
+        if key == "liveness":
+            extra = f"(bot-blocked: {facts['liveness']['bot_blocked']})  "
+        lines.append(
+            f"  [FACT] {label} {pad} {_pct(facts[key][rate_key])}  {extra}({facts[key]['grade']})"
+        )
     ai = metrics.get("ai_baseline")
     if ai:
         lines.append(

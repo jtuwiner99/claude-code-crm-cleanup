@@ -7,13 +7,15 @@ from .config import RunConfig
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "scorecard-template.html")
 
-_FACT_LABELS = [
+_FACT_REGISTRY = [
     ("duplicates", "Duplicates", "duplicate_rate"),
     ("fill_rate", "Missing critical fields", "overall_missing_rate"),
     ("contradictions", "Internal contradictions", "rate"),
     ("junk", "Junk records", "junk_rate"),
     ("staleness", "Stale (12+ mo)", "stale_rate"),
     ("liveness", "Dead domains", "dead_rate"),
+    ("orphaned", "Orphaned contacts", "orphaned_rate"),
+    ("email_format", "Invalid email format", "invalid_rate"),
 ]
 
 
@@ -42,7 +44,9 @@ def build_mailto(cfg: RunConfig, metrics: dict) -> str:
     facts = metrics["facts"]
     grade = metrics["overall_grade"]
     lines = [f"My CRM Report Card summary (Grade: {grade})", ""]
-    for key, label, rate_key in _FACT_LABELS:
+    for key, label, rate_key in _FACT_REGISTRY:
+        if key not in facts:
+            continue
         lines.append(f"- {label}: {_pct(facts[key][rate_key])} ({facts[key]['grade']})")
     ai = metrics.get("ai_baseline")
     if ai:
@@ -56,7 +60,9 @@ def build_mailto(cfg: RunConfig, metrics: dict) -> str:
 def _fact_rows_html(metrics: dict) -> str:
     facts = metrics["facts"]
     out = []
-    for key, label, rate_key in _FACT_LABELS:
+    for key, label, rate_key in _FACT_REGISTRY:
+        if key not in facts:
+            continue
         extra = ""
         if key == "liveness":
             extra = f" &middot; bot-blocked: {facts['liveness']['bot_blocked']}"
