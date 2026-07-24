@@ -43,6 +43,16 @@ always_run_derived:
   email_deliverability:       { free: false, note: "Whether the mailbox actually accepts mail. Enrichment. At cost." }
   verified_employee_count:    { free: false, note: "True current headcount and band accuracy. Enrichment. At cost." }
 
+# Classification the engagement builds per business. Not shipped free, because it
+# needs definitions, custom logic, and QA before it is trustworthy to act on.
+# If a stored column for one exists in the export, its fill-rate can be graded
+# free; the per-record classification itself is the done-for-you work.
+custom_classification_examples:
+  - company_type            # segment of company (Enterprise / Mid-Market / SMB, etc.)
+  - b2b_or_not              # does the account fit a B2B GTM motion
+  - vertical                # industry vertical / segment
+  - icp_fit_score           # per-record fit against the ICP
+
 # The check roles the free deterministic scan actually uses (auto-mapped from the
 # HubSpot default column labels above; see _ROLE_ALIASES in field_mapping.py):
 #   company_name, domain, company_size, last_activity, email, record_id

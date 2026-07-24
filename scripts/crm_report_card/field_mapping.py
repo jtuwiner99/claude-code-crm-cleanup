@@ -27,6 +27,19 @@ _ROLE_ALIASES = {
 }
 
 
+# Best-effort HubSpot internal property name per role, so the mapping display can
+# show the underlying field (e.g. "Number of Employees (numberofemployees)").
+ROLE_HUBSPOT_INTERNAL = {
+    "company_name": "name",
+    "domain": "domain",
+    "company_size": "numberofemployees",
+    "last_activity": "notes_last_updated",
+    "email": "email",
+    "contact_name": "firstname / lastname",
+    "record_id": "hs_object_id",
+}
+
+
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
