@@ -12,9 +12,10 @@
   .row { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
   .tag { font:600 11px/1 ui-monospace,Menlo,monospace; letter-spacing:.04em; padding:3px 6px; border-radius:4px; }
   .fact { background:#eef3ee; color:#2e6b3e; } .estimate { background:#fff0eb; color:var(--coral); }
-  .locked { color:var(--muted); } .cta { display:inline-block; margin-top:12px; padding:14px 22px;
+  .locked { color:var(--muted); } .book { display:inline-block; margin-top:12px; padding:14px 22px;
     background:var(--coral); color:#fff; text-decoration:none; font-weight:700; border-radius:8px; }
-  h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 24px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:18px; margin:28px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 16px; } ul.sub { padding-left:20px; }
 </style></head>
 <body><div class="wrap">
   <p class="sub">$product_name</p>
@@ -25,6 +26,14 @@
   $estimate_block
   <h2>Unlock the rest</h2>
   $locked_block
-  <a class="cta" href="$mailto">Work with Jacob</a>
-  <p class="sub"><a href="$booking_url">Book a call</a></p>
+  <h2>Work with Jacob</h2>
+  <p class="sub">Want the cleanup, not just the grade? Book a free session where Jacob
+    runs this on your real CRM with you and shows you what to fix first. On the call you get:</p>
+  <ul class="sub">
+    <li>The handful of things dragging your data quality down the most</li>
+    <li>A live look at what a verified, cleaned version of your book looks like</li>
+    <li>A plain next-step plan, no obligation</li>
+  </ul>
+  <a class="book" href="$booking_url">Book a free session</a>
+  <p class="sub">Prefer email? <a href="$mailto">Send Jacob your report card</a>.</p>
 </div></body></html>

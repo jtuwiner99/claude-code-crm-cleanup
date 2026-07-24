@@ -1,4 +1,4 @@
-"""Render the self-contained HTML scorecard + mailto CTA."""
+"""Render the self-contained HTML scorecard + mailto offer."""
 from __future__ import annotations
 import os
 from string import Template

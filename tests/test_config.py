@@ -31,6 +31,19 @@ def test_load_config_missing_required_raises(tmp_path):
         load_config(path)
 
 
+def test_cta_details_are_optional_and_default(tmp_path):
+    # A prospect's run-config never carries contact_email/booking_url; the
+    # "Work with Jacob" offer is baked in via defaults, not asked for.
+    path = _write(tmp_path, {
+        "icp_nl": "US B2B SaaS",
+        "critical_properties": ["email"],
+        "field_mapping": {},
+    })
+    cfg = load_config(path)
+    assert cfg.contact_email == "jacob@sculpted.agency"
+    assert cfg.booking_url.startswith("http")
+
+
 def test_load_config_empty_icp_raises(tmp_path):
     path = _write(tmp_path, {
         "icp_nl": "   ",

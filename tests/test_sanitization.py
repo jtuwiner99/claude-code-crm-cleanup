@@ -10,7 +10,7 @@ FORBIDDEN = [
     r"/Users/JT", r"sculpted-gtm", r"sculpted-studio", r"client-repositories",
     r"RESEND_API_KEY", r"HARVEST_API_KEY", r"sk-[A-Za-z0-9]{20}", r"deepline secrets",
 ]
-SCAN_EXT = {".py", ".md", ".html", ".json", ".jsonc", ".txt", ".toml", ".csv"}
+SCAN_EXT = {".py", ".md", ".html", ".json", ".jsonc", ".txt", ".toml", ".csv", ".yaml", ".yml"}
 # .superpowers = SDD scratch (task briefs/reports/ledger, full of internal paths).
 # dist = built bundle output (Task 18), not source.
 # docs = internal-facing spec/plan, stripped from the published bundle (see Task 18).
