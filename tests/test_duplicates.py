@@ -55,6 +55,32 @@ def test_leading_legal_word_not_stripped():
     assert check_duplicates(recs)["fuzzy_name_dupes"] == 0
 
 
+def test_contact_mode_unique_emails_same_domain_not_dupes():
+    # Regression: five real distinct people at @acme.com must not be flagged
+    # as duplicates in contact mode (dedup is on email identity, not domain).
+    recs = [
+        {"record_id": "0", "domain": "acme.com", "company_name": "Acme", "email": "jane@acme.com"},
+        {"record_id": "1", "domain": "acme.com", "company_name": "Acme", "email": "john@acme.com"},
+        {"record_id": "2", "domain": "acme.com", "company_name": "Acme", "email": "sue@acme.com"},
+        {"record_id": "3", "domain": "acme.com", "company_name": "Acme", "email": "bob@acme.com"},
+        {"record_id": "4", "domain": "acme.com", "company_name": "Acme", "email": "amy@acme.com"},
+    ]
+    out = check_duplicates(recs, object_type="contact")
+    assert out["duplicate_records"] == 0
+    assert out["exact_domain_dupes"] == 0
+    assert out["fuzzy_name_dupes"] == 0
+
+
+def test_contact_mode_repeated_email_is_dupe():
+    recs = [
+        {"record_id": "0", "domain": "acme.com", "company_name": "Acme", "email": "jane@acme.com"},
+        {"record_id": "1", "domain": "acme.com", "company_name": "Acme", "email": "Jane@Acme.com "},
+    ]
+    out = check_duplicates(recs, object_type="contact")
+    assert out["duplicate_records"] == 1
+    assert abs(out["duplicate_rate"] - 0.5) < 1e-9
+
+
 def test_all_suffix_name_falls_back():
     recs = [
         {"record_id": "0", "domain": "", "company_name": "Company Inc"},

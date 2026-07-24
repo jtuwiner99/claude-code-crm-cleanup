@@ -36,3 +36,15 @@ def test_load_records_keeps_extra_columns_when_requested(tmp_path):
 
     records_default, _ = load_records(path, {})
     assert "Industry" not in records_default[0]
+
+
+def test_load_records_derives_domain_from_email_for_contacts(tmp_path):
+    path = _csv(tmp_path, "First Name,Email\nJane, jane@acme.com \n")
+    records, _ = load_records(path, {}, object_type="contact")
+    assert records[0]["domain"] == "acme.com"
+
+
+def test_load_records_does_not_derive_domain_from_email_for_companies(tmp_path):
+    path = _csv(tmp_path, "First Name,Email\nJane, jane@acme.com \n")
+    records, _ = load_records(path, {})
+    assert records[0].get("domain", "") == ""

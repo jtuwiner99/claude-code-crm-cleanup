@@ -44,6 +44,27 @@ def test_cta_details_are_optional_and_default(tmp_path):
     assert cfg.booking_url.startswith("http")
 
 
+def test_object_type_defaults_to_company(tmp_path):
+    path = _write(tmp_path, {
+        "icp_nl": "US B2B SaaS",
+        "critical_properties": ["email"],
+        "field_mapping": {},
+    })
+    cfg = load_config(path)
+    assert cfg.object_type == "company"
+
+
+def test_object_type_loads_contact_when_present(tmp_path):
+    path = _write(tmp_path, {
+        "icp_nl": "US B2B SaaS",
+        "critical_properties": ["email"],
+        "field_mapping": {},
+        "object_type": "contact",
+    })
+    cfg = load_config(path)
+    assert cfg.object_type == "contact"
+
+
 def test_load_config_empty_icp_raises(tmp_path):
     path = _write(tmp_path, {
         "icp_nl": "   ",

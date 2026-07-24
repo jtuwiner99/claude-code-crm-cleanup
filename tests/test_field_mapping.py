@@ -38,4 +38,12 @@ def test_resolve_mapping_applies_valid_overrides_and_ignores_missing_headers():
 
 def test_canonical_roles_shape():
     assert CANONICAL_ROLES == ("company_name", "domain", "contact_name", "email",
-                               "company_size", "last_activity", "record_id")
+                               "company_size", "last_activity", "record_id",
+                               "first_name", "last_name")
+
+
+def test_auto_map_first_and_last_name():
+    m = auto_map(["First Name", "Last Name", "Email"])
+    assert m["first_name"] == "First Name"
+    assert m["last_name"] == "Last Name"
+    assert m["email"] == "Email"

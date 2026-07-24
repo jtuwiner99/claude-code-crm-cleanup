@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 
 CANONICAL_ROLES = ("company_name", "domain", "contact_name", "email",
-                   "company_size", "last_activity", "record_id")
+                   "company_size", "last_activity", "record_id",
+                   "first_name", "last_name")
 
 # Known HubSpot default (and common) property names per role, matched by EXACT
 # normalized equality. Conservative on purpose: a header maps to a role only if
@@ -24,6 +25,8 @@ _ROLE_ALIASES = {
     "email": {"email", "email address", "work email", "contact email"},
     "record_id": {"record id", "company id", "contact id", "object id",
                   "hs object id", "id", "vid"},
+    "first_name": {"first name", "firstname", "given name"},
+    "last_name": {"last name", "lastname", "surname", "family name"},
 }
 
 
@@ -37,6 +40,8 @@ ROLE_HUBSPOT_INTERNAL = {
     "email": "email",
     "contact_name": "firstname / lastname",
     "record_id": "hs_object_id",
+    "first_name": "firstname",
+    "last_name": "lastname",
 }
 
 

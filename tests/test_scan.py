@@ -60,3 +60,24 @@ def test_scan_from_files_checks_custom_critical_column(tmp_path):
     assert "Industry" in per_field
     assert per_field["Industry"]["filled"] == 2
     assert per_field["Industry"]["missing"] == 1
+
+
+def test_scan_from_files_contact_mode_does_not_inflate_duplicates(tmp_path):
+    csv_text = (
+        "First Name,Company Domain Name,Email\n"
+        "Jane,acme.com,jane@acme.com\n"
+        "John,acme.com,john@acme.com\n"
+        "Sue,acme.com,sue@acme.com\n"
+    )
+    path = tmp_path / "contacts.csv"
+    path.write_text(csv_text)
+
+    cfg = RunConfig(icp_nl="x", critical_properties=["email"], field_mapping={},
+                     contact_email="a@b.co", booking_url="https://x",
+                     favorite_customers=[], product_name="The CRM Report Card",
+                     object_type="contact")
+
+    metrics = scan_from_files(str(path), cfg, today=date(2026, 7, 22),
+                              fetcher=lambda d: (200, False))
+
+    assert metrics["facts"]["duplicates"]["duplicate_records"] == 0

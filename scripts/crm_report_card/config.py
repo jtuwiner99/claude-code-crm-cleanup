@@ -12,6 +12,10 @@ DEFAULT_PRODUCT_NAME = "The CRM Report Card"
 DEFAULT_CONTACT_EMAIL = "jacob@sculpted.agency"
 DEFAULT_BOOKING_URL = "https://cal.com/jacob"  # placeholder: set to the real booking link
 
+# Valid values for RunConfig.object_type. Companies dedup on domain+name;
+# contacts dedup on email identity (see checks/duplicates.py).
+DEFAULT_OBJECT_TYPE = "company"
+
 _REQUIRED = ("icp_nl", "critical_properties", "field_mapping")
 
 
@@ -24,6 +28,7 @@ class RunConfig:
     booking_url: str = DEFAULT_BOOKING_URL
     favorite_customers: list[str] = field(default_factory=list)
     product_name: str = DEFAULT_PRODUCT_NAME
+    object_type: str = DEFAULT_OBJECT_TYPE
 
 
 def load_config(path: str) -> RunConfig:
@@ -42,4 +47,5 @@ def load_config(path: str) -> RunConfig:
         booking_url=raw.get("booking_url") or DEFAULT_BOOKING_URL,
         favorite_customers=list(raw.get("favorite_customers", [])),
         product_name=raw.get("product_name") or DEFAULT_PRODUCT_NAME,
+        object_type=raw.get("object_type") or DEFAULT_OBJECT_TYPE,
     )

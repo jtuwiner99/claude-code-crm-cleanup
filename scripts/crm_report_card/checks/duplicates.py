@@ -21,8 +21,28 @@ def _norm_name(name: str) -> str:
     return result or " ".join(tokens).strip()
 
 
-def check_duplicates(records: list[dict]) -> dict:
+def check_duplicates(records: list[dict], object_type: str = "company") -> dict:
     total = len(records)
+
+    if object_type == "contact":
+        seen_emails: set[str] = set()
+        dupe_count = 0
+        for rec in records:
+            email = (rec.get("email") or "").strip().lower()
+            if not email:
+                continue
+            if email in seen_emails:
+                dupe_count += 1
+            else:
+                seen_emails.add(email)
+        return {
+            "total_records": total,
+            "exact_domain_dupes": 0,
+            "fuzzy_name_dupes": 0,
+            "duplicate_records": dupe_count,
+            "duplicate_rate": (dupe_count / total) if total else 0.0,
+        }
+
     seen_domains: set[str] = set()
     exact_ids: set[str] = set()
     for rec in records:
