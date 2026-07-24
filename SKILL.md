@@ -50,45 +50,42 @@ Then give a quick tour of what they downloaded, so they can trust it:
 
 Keep it low-pressure. If they want to self-serve, move straight on.
 
-## 2. What the report card measures (and what more is possible)
+## 2. What the report card measures
 
-Explain it as a ladder, because both the honesty and the range are the point.
-Do not undersell it as "just six checks."
+Data quality has two dimensions, and there are three ways to measure them. Lead
+with this framing: it is the honesty and the whole value ladder in one picture.
 
-**Free, right now (this scan):**
-- **Six FACTs** (deterministic, reproducible, no model). Same data in, same
-  number out: **duplicates**, **missing critical fields**, **internal
-  contradictions** (a company sized at 3 with 40 contacts), **junk records**
-  (free-mail domains posing as companies, generic info@ inboxes, test rows),
-  **stale records** (untouched 12+ months), and **dead domains** (with a real
-  live / bot-blocked / dead distinction).
-- **One ESTIMATE**: a single-pass read of how much of the book looks "qualified"
-  against their ICP, always labeled **NOT VERIFIED**, with the reasons why. A
-  rough directional read, nothing more. (You may run a small custom agent for
-  this ICP-fit pass; it is still an unverified estimate.)
+**Two dimensions of quality:**
+- **Completeness (fill rate):** is the field even filled in?
+- **Accuracy:** is the value actually correct, and still true today? (Freshness
+  is part of accuracy: a right answer that has gone stale is now wrong.)
 
-**More you can get, when the export alone can't prove it:**
-The free scan reads what is already in the file. Some things a static export
-cannot confirm: the true current headcount (not just the band sitting in the
-CRM), whether a contact still works there, whether an email still delivers.
-Getting those means checking each record against a live source. Two ways to do
-it: run them yourself with the plays Jacob has already built, or have Jacob run
-them for you. Either way they are named on the card, so the user sees where they
-would sharpen the picture. Do not call this "the paid tier" or anything like it;
-it is just the next thing you can do once the free scan shows you where it hurts.
+**Three ways we measure them:**
+1. **Deterministic, free (this scan, code only).** Measures completeness and
+   hygiene straight from the file: fill rates, duplicates, contradictions, junk,
+   stale timestamps, dead domains, email format, orphaned records. Reproducible,
+   no model, runs offline. Plus one clearly-labeled NOT-VERIFIED estimate of how
+   much of the book looks "qualified" against their ICP.
+2. **Accuracy layer (cheap, tried-and-true Sculpted plays you run yourself).**
+   The file cannot prove accuracy, because it has no ground truth to check
+   against. That needs live verification. These are the same proven plays Sculpted
+   uses, shared with you: employee-count accuracy (is the stored count actually
+   right, or off by orders of magnitude), email deliverability (does it actually
+   land, not just parse), still-employed accuracy (do they really still work
+   there). You run them yourself on your own Deepline account and pay Deepline at
+   cost. No setup call. Be clear these are cheap, battle-tested, and shared, not a
+   gated upsell.
+3. **Custom dimensions (hand-built for their business, Sculpted does this).**
+   Classification (company type, vertical, B2B or not), parent-child resolution,
+   custom segments, fit scoring tuned to their ICP. These cannot be one size fits
+   all: they need definitions and logic built for the specific business, plus real
+   QA before anyone should trust them. This is where Sculpted comes in, done for
+   them.
 
-**Classification built for their business:**
-Segmenting the book by company type, flagging whether an account is B2B or not,
-fit scoring tuned to their ICP. This part is not a free download for a real
-reason: it needs definitions built for their specific business, custom logic, and
-careful QA before anyone should trust it enough to act on. Getting that right,
-and standing behind it, is the work Jacob does with companies, done for them.
-Someone can attempt it solo, but it is genuinely hard and slow to make reliable.
-
-The one-liner: the free scan gives you honest, reproducible facts plus one
-clearly labeled guess. The sharper verified numbers and the classification work
-are the natural next steps, and the card shows exactly where they would add
-value. If they want those done right, that is where Jacob comes in.
+The punchline to land: this free scan grades **completeness**. It cannot grade
+**accuracy**, nothing in the file can. Data can be 100% complete and 90% wrong,
+and complete-but-wrong is the most dangerous kind because it looks fine. The
+accuracy grade stays locked until they run the plays.
 
 ## 3. What I need from you (ask one step at a time)
 

@@ -24,18 +24,21 @@ def _pct(rate: float) -> str:
 
 
 def locked_rows(cfg: RunConfig) -> list[str]:
-    # The locked section: what the free scan does not deliver. Two layers, so the
-    # user sees the whole ladder: enrichment they can run at cost, and custom
-    # work that is the engagement. Personalized with the fields they said matter.
+    # The locked section = the ACCURACY axis, which the free (completeness) scan
+    # cannot measure. Two layers: the cheap tried-and-true Sculpted plays the user
+    # runs themselves, and the custom dimensions Sculpted hand-builds. Personalized
+    # with the fields they said matter.
     rows = [
-        "Verified employee count, real accuracy not just fill rate [enrichment]",
-        "Job-change and still-employed tracking [enrichment]",
-        "Email validation and deliverability [enrichment]",
+        "Employee-count accuracy, verified vs stored [Sculpted play, run it yourself]",
+        "Email deliverability, not just format [Sculpted play, run it yourself]",
+        "Still-employed accuracy, real not timestamp [Sculpted play, run it yourself]",
     ]
-    rows += [f"Custom rules and scoring for your {p} data [custom]" for p in cfg.critical_properties]
+    rows += [f"Custom rules and scoring for your {p} data [hand-built by Sculpted]"
+             for p in cfg.critical_properties]
     rows += [
-        "Segment your book by company type or vertical [custom]",
-        "Custom fit scoring against your ICP [custom]",
+        "Company type / vertical classification [hand-built by Sculpted]",
+        "Parent-child account resolution [hand-built by Sculpted]",
+        "Custom fit scoring against your ICP [hand-built by Sculpted]",
     ]
     return rows
 
