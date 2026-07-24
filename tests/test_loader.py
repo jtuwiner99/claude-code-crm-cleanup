@@ -27,3 +27,12 @@ def test_load_records_missing_cells_blank(tmp_path):
     path = _csv(tmp_path, "Company,Website\nAcme,\n")
     records, _ = load_records(path, {})
     assert records[0]["domain"] == ""
+
+
+def test_load_records_keeps_extra_columns_when_requested(tmp_path):
+    path = _csv(tmp_path, "Company,Website,Industry\nAcme,acme.com,SaaS\n")
+    records, _ = load_records(path, {}, extra_columns=["Industry"])
+    assert records[0]["Industry"] == "SaaS"
+
+    records_default, _ = load_records(path, {})
+    assert "Industry" not in records_default[0]

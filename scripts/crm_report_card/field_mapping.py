@@ -5,15 +5,25 @@ import re
 CANONICAL_ROLES = ("company_name", "domain", "contact_name", "email",
                    "company_size", "last_activity", "record_id")
 
-_SYNONYMS = {
-    "company_name": ("company", "account", "organization", "org", "business", "company name"),
-    "domain": ("domain", "website", "url", "web", "site", "company domain"),
-    "contact_name": ("contact", "name", "full name", "person", "lead"),
-    "email": ("email", "e-mail", "email address", "work email"),
-    "company_size": ("employees", "employee count", "size", "headcount", "num employees"),
-    "last_activity": ("last activity", "last modified", "updated", "last contacted",
-                      "modified date", "last touch"),
-    "record_id": ("record id", "record_id", "id", "hs object id", "crm id"),
+# Known HubSpot default (and common) property names per role, matched by EXACT
+# normalized equality. Conservative on purpose: a header maps to a role only if
+# its normalized form is exactly one of these, so we never grab "Company Domain
+# Name" for contact_name or a date column for email. A role with no exact match
+# is simply left unmapped.
+_ROLE_ALIASES = {
+    "company_name": {"company name", "company", "account name", "account",
+                     "organization", "organization name"},
+    "domain": {"company domain name", "domain", "domain name", "website",
+               "website url", "company domain", "web domain"},
+    "company_size": {"number of employees", "employees", "employee count",
+                     "num employees", "headcount", "company size", "size",
+                     "total employees"},
+    "last_activity": {"last activity date", "last activity", "last modified date",
+                      "last modified", "last engagement date", "last engagement"},
+    "contact_name": {"contact name", "full name", "contact full name"},
+    "email": {"email", "email address", "work email", "contact email"},
+    "record_id": {"record id", "company id", "contact id", "object id",
+                  "hs object id", "id", "vid"},
 }
 
 
@@ -22,17 +32,10 @@ def _norm(text: str) -> str:
 
 
 def auto_map(headers: list[str]) -> dict[str, str]:
-    normed = {h: _norm(h) for h in headers}
     mapping: dict[str, str] = {}
-    for role, syns in _SYNONYMS.items():
-        for header, nh in normed.items():
-            if nh in syns or any(nh == _norm(s) for s in syns):
-                mapping[role] = header
-                break
-        if role in mapping:
-            continue
-        for header, nh in normed.items():
-            if any(_norm(s) in nh for s in syns):
+    for role, aliases in _ROLE_ALIASES.items():
+        for header in headers:
+            if _norm(header) in aliases:
                 mapping[role] = header
                 break
     return mapping

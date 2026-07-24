@@ -1,65 +1,42 @@
-# properties.yaml
+# properties.yaml — the property catalogue for the CRM Report Card.
 #
-# The property catalogue for the CRM Report Card. It records, per property,
-# what can be measured for FREE and deterministically right now, and what can
-# only be VERIFIED with live enrichment.
-#
-# During intake (SKILL.md step 3), map each of the user's real columns to one of
-# these canonical properties, then use this file to tell them honestly what
-# their grade covers and what a paid engagement would add. Do not invent
-# verified numbers here; anything marked "verified_by" is a locked-teaser item.
-#
-#   free    = offline, no keys, deterministic. Produces a FACT row.
-#   verified = needs enrichment against a live provider. Not built here; shown
-#              as a locked row on the report card (the paid engagement).
+# Three kinds of properties, matching how the intake maps fields (SKILL.md
+# step 3). This file is a human reference; the runtime source of truth for the
+# default-mapped names is _ROLE_ALIASES in
+# scripts/crm_report_card/field_mapping.py (kept stdlib-only, no yaml at runtime).
 
-company:
-  company_name:
-    free_checks: [duplicates_fuzzy, junk_test_records]
-    verified_by: null
-  domain:
-    free_checks: [duplicates_exact, junk_free_mail, dead_domain_liveness, fill_rate]
-    verified_by: null
-  company_size:
-    free_checks: [fill_rate, contradiction_size_vs_contacts]
-    verified_by: verify_linkedin_employee_count
-    note: >
-      Free tier only checks whether the stored size is present and internally
-      consistent (for example, size 3 with 40 contacts is a contradiction). The
-      true current headcount is an enrichment, not something a static export
-      can prove.
-  industry:
-    free_checks: [fill_rate]
-    verified_by: classify_industry
-  company_type_or_segment:
-    free_checks: [fill_rate]
-    verified_by: segment_by_type
-    note: >
-      Segmenting the book by company type or vertical needs custom definitions
-      per business. Free tier can only check whether the field is populated.
+# 1) DEFAULT-MAPPED
+#    Well-known default property names we map, by EXACT name, to the role a check
+#    uses. auto_map() does this conservatively: exact match only, so it never
+#    mis-guesses, and a role with no exact match is simply left unmapped.
+default_mapped:
+  company_name: [Company name, Company, Account name, Organization]
+  domain:       [Company Domain Name, Domain, Website URL, Website]
+  company_size: [Number of Employees, Employees, Employee count, Headcount]
+  last_activity: [Last Activity Date, Last Modified Date, Last Engagement Date]
+  contact_name: [Contact name, Full name]
+  email:        [Email, Email address, Work email]
 
-contact:
-  contact_name:
-    free_checks: [fill_rate]
-    verified_by: null
-  email:
-    free_checks: [fill_rate, junk_generic_inbox, junk_free_mail]
-    verified_by: verify_email_deliverability
-    note: >
-      Free tier flags blanks, generic inboxes (info@, sales@), and free-mail
-      domains posing as companies. Whether the mailbox actually accepts mail is
-      a verification step.
-  last_activity:
-    free_checks: [fill_rate, staleness]
-    verified_by: null
-  still_employed:
-    free_checks: []
-    verified_by: detect_job_change
-    note: >
-      Whether a contact still works at the on-record company cannot be known
-      from a static export. Shown as a locked row.
+# 2) ENRICHMENT (default concepts we do NOT map from a column, because a static
+#    export cannot contain them). Verified in the paid tier, shown as locked
+#    rows. Never faked in the free scan.
+enrichment_not_mapped:
+  verified_employee_count:
+    note: True current headcount and band accuracy, not just whether size is filled.
+  still_employed_job_change:
+    note: Whether a contact still works at the on-record company.
+  email_deliverability:
+    note: Whether an address actually accepts mail.
 
-# Free deterministic checks referenced above (each produces a FACT row):
+# 3) CUSTOM
+#    Any other column the user says matters. Added by exact header to
+#    critical_properties; the fill-rate FACT then covers it. This is how a user
+#    brings their own properties into the grade.
+custom:
+  examples: [Industry, Company owner, Lifecycle stage, Annual revenue]
+  note: Ask which other columns are critical, then add them by exact header.
+
+# Free deterministic checks (each produces a FACT row):
 #   duplicates_exact, duplicates_fuzzy, fill_rate, contradiction_size_vs_contacts,
 #   junk_free_mail, junk_generic_inbox, junk_test_records, staleness,
 #   dead_domain_liveness

@@ -149,47 +149,62 @@ what the ESTIMATE scores against. Offer them easy ways to give it, not just
 Capture the result as `icp_nl`. Also ask for 3 to 5 of their best current
 customers; these anchor the estimate and the teaser copy.
 
-### Step 3: which of your columns matter
+### Step 3: map the fields, deliberately (three parts)
 
-Load the actual column headers from their CSV and **show them their real
-columns**. Then:
+Do this as a clear, three-part step, not a fuzzy guess. Never force a mapping
+that is not really there: a companies-only export has no contact name or email,
+and that is completely fine.
 
-- Ask which fields actually matter, meaning: a blank or wrong value there makes
-  the record close to useless to them. **Employee count is a common one**;
-  there are usually a few others on both the company and contact side.
-- Run the auto field-mapper (`crm_report_card.field_mapping.auto_map`) to
-  propose which columns map to which roles, and **confirm the mapping with
-  them** rather than assuming, especially for looser matches like
-  `company_size` and `last_activity`. Note that plain camel-case headers like
-  `LastActivity` may not auto-detect, so eyeball the proposal.
-- Be honest about what this tier can and cannot do with each field. You can
-  check, **for free and deterministically right now**: whether a field is
-  filled, whether values contradict each other, duplicates, staleness, and
-  domain liveness. What you **cannot verify here**, because it needs live
-  enrichment, includes things like a company's true current employee count or
-  whether a contact still works there (job changes). Surface those as what the
-  paid engagement verifies; they show up in the locked section of the card, not
-  as fake numbers here. The catalogue of which property types are free-
-  deterministic versus enrichment-backed lives in `properties.yaml`.
+**Part 1: confirm the core fields we mapped from their defaults.**
+Run `crm_report_card.field_mapping.auto_map` on their headers. It maps ONLY
+well-known default property names to the roles the checks use, by exact name, so
+it will not mis-guess. Show them what it mapped, plainly, for a quick yes or no,
+for example:
 
-Write the confirmed answers to `run-config.json` in the working directory. Note:
-you do **not** ask the user for any contact or booking details. The "Work with
-Jacob" offer is baked into the tool (`DEFAULT_CONTACT_EMAIL` /
-`DEFAULT_BOOKING_URL` in `config.py`); a prospect should never be asked to fill
-in someone else's marketing.
+```
+Company name   -> Company name
+Domain         -> Company Domain Name
+Company size   -> Number of Employees
+Last activity  -> Last Activity Date
+```
+
+If a core role did not map (for example, no email or contact name on a companies
+export), just say so and move on. Do not invent one. If they know the correct
+column for an unmapped role, take it as an override in `field_mapping`.
+
+**Part 2: name the enrichment concepts (these do not come from a column).**
+Tell them, so they are not surprised to see them locked, the things a static
+export cannot contain: **verified employee count** (real accuracy of the band,
+not just whether the size field is filled), **job-change / still-employed
+tracking**, and **email deliverability**. These come from the paid enrichment
+layer, not their CSV, and they appear in the locked section of the card. Never
+fake a number for them here.
+
+**Part 3: pick the extra fields that matter to them (their custom properties).**
+Ask which OTHER columns in their export are important enough that a blank or
+wrong value makes the record close to useless. Companies often name Industry,
+Company owner, Lifecycle stage, or a custom field. Add each one by its exact
+column name to `critical_properties`; the fill-rate FACT then covers it too.
+This is how they bring their own properties into the grade.
+
+Then write `run-config.json`. You do **not** ask for any contact or booking
+details; the "Work with Jacob" offer is baked into the tool
+(`DEFAULT_CONTACT_EMAIL` / `DEFAULT_BOOKING_URL` in `config.py`).
 
 ```json
 {
   "icp_nl": "US-based B2B SaaS companies, 50 to 500 employees, modern tech stack",
-  "critical_properties": ["email", "company_size"],
-  "field_mapping": { "domain": "Website", "last_activity": "Last Activity" },
+  "critical_properties": ["company_size", "Industry", "Company owner"],
+  "field_mapping": { "domain": "Company Domain Name", "last_activity": "Last Activity Date" },
   "favorite_customers": ["Acme Robotics", "Brightgate Software", "Pinebrook Cloud"]
 }
 ```
 
-`field_mapping` only needs entries for roles the auto-mapper missed;
-`critical_properties` are canonical roles (`company_name`, `domain`,
-`contact_name`, `email`, `company_size`, `last_activity`).
+`field_mapping` only needs entries for roles `auto_map` missed.
+`critical_properties` may be a canonical role (`company_size`, `email`, ...) OR
+the exact header of any custom column they care about (like `Industry`); the
+scan keeps and grades both. The full catalogue of default-mapped roles,
+enrichment concepts, and custom fields lives in `properties.yaml`.
 
 ## 4. Run the scan (deterministic, no model)
 

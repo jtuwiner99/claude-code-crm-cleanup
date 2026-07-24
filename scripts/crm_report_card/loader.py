@@ -4,17 +4,22 @@ import csv
 from .field_mapping import resolve_mapping
 
 
-def load_records(csv_path: str, overrides: dict[str, str]) -> tuple[list[dict], dict[str, str]]:
+def load_records(csv_path: str, overrides: dict[str, str],
+                 extra_columns=()) -> tuple[list[dict], dict[str, str]]:
     with open(csv_path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         headers = reader.fieldnames or []
         mapping = resolve_mapping(headers, overrides)
         has_id = "record_id" in mapping
+        header_set = set(headers)
+        extras = [col for col in extra_columns if col in header_set]
         records: list[dict] = []
         for idx, row in enumerate(reader):
             rec: dict[str, str] = {}
             for role, header in mapping.items():
                 rec[role] = (row.get(header) or "").strip()
+            for col in extras:
+                rec[col] = (row.get(col) or "").strip()
             if not has_id or not rec.get("record_id"):
                 rec["record_id"] = str(idx)
             records.append(rec)

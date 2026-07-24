@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 from .config import RunConfig
 from .loader import load_records
+from .field_mapping import CANONICAL_ROLES
 from .checks.duplicates import check_duplicates
 from .checks.fill_rate import check_fill_rate
 from .checks.contradictions import check_contradictions
@@ -48,5 +49,6 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
 
 
 def scan_from_files(csv_path: str, cfg: RunConfig, today: date, fetcher=None) -> dict:
-    records, _ = load_records(csv_path, cfg.field_mapping)
+    extra = [p for p in cfg.critical_properties if p not in CANONICAL_ROLES]
+    records, _ = load_records(csv_path, cfg.field_mapping, extra_columns=extra)
     return run_scan(records, cfg, today=today, fetcher=fetcher)

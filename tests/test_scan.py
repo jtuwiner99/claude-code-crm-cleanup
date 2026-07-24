@@ -2,7 +2,7 @@ import json, os
 from datetime import date
 from crm_report_card.config import RunConfig
 from crm_report_card.loader import load_records
-from crm_report_card.scan import run_scan
+from crm_report_card.scan import run_scan, scan_from_files
 
 
 def _cfg():
@@ -37,3 +37,26 @@ def test_golden_fixture_matches_expected():
     assert metrics["counts"]["records"] == expected["counts"]["records"]
     assert metrics["facts"]["duplicates"]["duplicate_records"] == expected["duplicate_records"]
     assert metrics["overall_grade"] == expected["overall_grade"]
+
+
+def test_scan_from_files_checks_custom_critical_column(tmp_path):
+    csv_text = (
+        "Company name,Company Domain Name,Industry\n"
+        "Acme,acme.com,SaaS\n"
+        "Globex,globex.io,\n"
+        "Initech,initech.com,Manufacturing\n"
+    )
+    path = tmp_path / "raw.csv"
+    path.write_text(csv_text)
+
+    cfg = RunConfig(icp_nl="x", critical_properties=["Industry"], field_mapping={},
+                     contact_email="a@b.co", booking_url="https://x",
+                     favorite_customers=[], product_name="The CRM Report Card")
+
+    metrics = scan_from_files(str(path), cfg, today=date(2026, 7, 22),
+                              fetcher=lambda d: (200, False))
+
+    per_field = metrics["facts"]["fill_rate"]["per_field"]
+    assert "Industry" in per_field
+    assert per_field["Industry"]["filled"] == 2
+    assert per_field["Industry"]["missing"] == 1
