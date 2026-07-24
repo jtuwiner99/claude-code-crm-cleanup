@@ -1,7 +1,8 @@
-<!-- The CRM Report Card. Self-contained (inline CSS, no external calls, system
-     fonts) so it opens offline and nothing leaves the machine. Sculpted design
-     system: near-black text, hairline borders, single coral accent, no shadows,
-     no gradients. -->
+<!-- The CRM Report Card. Self-contained (inline CSS, inline JS, no external calls,
+     system fonts) so it opens offline and nothing leaves the machine. Sculpted
+     design system: near-black text, hairline borders, single coral accent, no
+     shadows, no gradients. Interactive: click a FACT to open its cited example
+     records with verify-in-CRM links. -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -9,148 +10,103 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>$product_name</title>
 <style>
-  :root{
-    --bg:#ffffff; --bg-alt:#fafafa; --panel:#f5f5f5;
-    --text:#050505; --muted:#51565a; --subtle:#737373;
-    --border:#e5e5e5; --border-strong:#d4d4d4; --coral:#fe7b57;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box;} html{-webkit-text-size-adjust:100%;}
-  body{margin:0;background:var(--bg-alt);color:var(--text);font-family:var(--sans);
-    line-height:1.5;-webkit-font-smoothing:antialiased;}
-  .sheet{max-width:720px;margin:32px auto;background:var(--bg);border:1px solid var(--border);
-    border-radius:20px;overflow:hidden;}
-  .pad{padding:40px;}
-  @media (max-width:560px){ .pad{padding:24px;} .sheet{margin:0;border-radius:0;border-left:0;border-right:0;} }
-
-  .eyebrow{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;
-    letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
-  .eyebrow::before{content:"";width:28px;height:2px;background:var(--coral);display:block;}
+  :root{--bg:#fff;--bg-alt:#fafafa;--text:#050505;--muted:#51565a;--subtle:#737373;
+    --border:#e5e5e5;--border-strong:#d4d4d4;--coral:#fe7b57;--track:#eeeeee;--bar:#404040;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;} body{margin:0;background:var(--bg-alt);color:var(--text);font-family:var(--sans);line-height:1.5;}
+  .sheet{max-width:760px;margin:32px auto;background:var(--bg);border:1px solid var(--border);border-radius:20px;overflow:hidden;}
+  .pad{padding:44px;} @media(max-width:600px){.pad{padding:22px;}.sheet{margin:0;border-radius:0;}}
+  .eyebrow{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .eyebrow::before{content:"";width:28px;height:2px;background:var(--coral);}
   .product{font-size:13px;color:var(--subtle);margin-top:6px;}
+  .ladder{display:flex;gap:8px;margin:26px 0;} .stage{flex:1;border:1px solid var(--border);border-radius:12px;padding:11px 13px;}
+  .stage.active{border-color:var(--coral);} .stage .num{font-family:var(--mono);font-size:12px;color:var(--subtle);}
+  .stage .nm{font-size:14px;font-weight:600;margin:2px 0 3px;} .stage .st{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;}
+  .stage.active .st{color:var(--coral);} .stage.locked .st{color:var(--subtle);} .stage .cap{font-size:12px;color:var(--muted);margin-top:2px;}
+  .scope{font-size:13px;color:var(--muted);background:var(--bg-alt);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+  .scope b{color:var(--text);}
+  .seg{border-top:1px solid var(--border);margin-top:30px;padding-top:26px;}
+  .seghead{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+  .seghead h2{font-size:24px;font-weight:700;letter-spacing:-.015em;margin:0;} .seghead .cnt{font-size:13px;color:var(--subtle);}
+  .gradebadge{font-size:44px;font-weight:800;line-height:1;color:var(--coral);letter-spacing:-.02em;} .gradebadge.ok{color:var(--text);}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0 6px;} @media(max-width:600px){.tiles{grid-template-columns:repeat(2,1fr);}}
+  .tile{border:1px solid var(--border);border-radius:12px;padding:14px;} .tile .n{font-size:26px;font-weight:800;letter-spacing:-.02em;} .tile .n.bad{color:var(--coral);} .tile .l{font-size:12px;color:var(--muted);margin-top:2px;}
 
-  /* progress ladder */
-  .ladder{display:flex;gap:8px;margin:28px 0 8px;}
-  .stage{flex:1;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--bg);}
-  .stage.active{border-color:var(--coral);}
-  .stage .num{font-family:var(--mono);font-size:12px;color:var(--subtle);}
-  .stage .nm{font-size:14px;font-weight:600;margin:2px 0 4px;}
-  .stage .st{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;}
-  .stage.active .st{color:var(--coral);}
-  .stage.locked .st{color:var(--subtle);}
-  .stage .cap{font-size:12px;color:var(--muted);margin-top:2px;}
+  .sig{border-bottom:1px solid var(--border);} .sig:last-child{border-bottom:0;}
+  .sigbtn{width:100%;text-align:left;background:none;border:0;padding:16px 0;cursor:pointer;font:inherit;color:inherit;display:block;}
+  .sigbtn:hover .signame{color:var(--coral);}
+  .sigtop{display:flex;justify-content:space-between;align-items:baseline;gap:14px;}
+  .signame{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .chev{font-family:var(--mono);font-size:11px;color:var(--subtle);transition:transform .15s;} .sig.open .chev{transform:rotate(90deg);}
+  .tag{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;color:var(--muted);border:1px solid var(--border-strong);border-radius:4px;padding:1px 5px;}
+  .sigval{font-family:var(--mono);font-size:14px;white-space:nowrap;} .sigval .grade{font-weight:700;margin-left:8px;} .sigval .grade.f{color:var(--coral);}
+  .bartrack{height:8px;background:var(--track);border-radius:999px;margin:9px 0 7px;overflow:hidden;} .barfill{height:100%;border-radius:999px;background:var(--bar);} .barfill.f{background:var(--coral);}
+  .sigexp{font-size:13px;color:var(--muted);margin:0;}
+  .detail{display:none;padding:4px 0 18px;} .sig.open .detail{display:block;}
+  .exhead{font-size:12px;color:var(--subtle);margin:2px 0 8px;}
+  .ex{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 12px;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;}
+  .ex .w{font-size:13px;} .ex .w b{font-weight:600;} .ex .meta{font-family:var(--mono);font-size:11px;color:var(--subtle);white-space:nowrap;}
+  .ex a{color:var(--coral);text-decoration:none;font-weight:600;} .ex a:hover{text-decoration:underline;}
 
-  /* grade hero */
-  .hero{display:flex;align-items:baseline;gap:20px;margin-top:28px;}
-  .grade{font-size:104px;font-weight:800;line-height:.9;color:var(--coral);letter-spacing:-.03em;}
-  .hero .meta .glabel{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
-  .hero .meta .verdict{font-size:20px;font-weight:600;margin:4px 0 2px;letter-spacing:-.01em;}
-  .hero .meta .count{font-size:14px;color:var(--subtle);}
-
-  .sectlabel{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--muted);margin:34px 0 4px;display:flex;justify-content:space-between;align-items:center;}
-  .sectlabel .tagl{color:var(--subtle);}
-
-  .row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
-    padding:12px 0;border-bottom:1px solid var(--border);}
-  .row:last-child{border-bottom:0;}
-  .row .name{font-size:15px;}
-  .tag{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;
-    padding:2px 6px;border-radius:4px;border:1px solid var(--border-strong);color:var(--muted);margin-right:8px;}
-  .row .val{font-family:var(--mono);font-size:14px;color:var(--text);white-space:nowrap;}
-  .row .val .g{color:var(--muted);}
-
-  /* estimate + punchline */
-  .estimate{background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:12px;}
-  .estimate .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
-  .estimate .why{font-size:13px;color:var(--muted);margin:8px 0 0;}
-  .estimate ul{margin:6px 0 0;padding-left:18px;} .estimate li{font-size:13px;color:var(--muted);}
-  .etag{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;padding:2px 6px;
-    border-radius:4px;color:var(--coral);border:1px solid var(--coral);}
-
-  .punch{border-left:2px solid var(--coral);padding:4px 0 4px 16px;margin:28px 0;}
-  .punch b{font-weight:700;} .punch{font-size:15px;color:var(--text);}
-
-  /* locked sections */
+  .estimate{background:var(--bg-alt);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:26px;}
+  .estimate .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;} .etag{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.04em;padding:2px 6px;border-radius:4px;color:var(--coral);border:1px solid var(--coral);}
+  .estimate .why{font-size:13px;color:var(--muted);margin:8px 0 0;} .estimate ul{margin:6px 0 0;padding-left:18px;} .estimate li{font-size:13px;color:var(--muted);} .estimate .val{font-family:var(--mono);font-size:14px;}
+  .punch{border-left:2px solid var(--coral);padding:4px 0 4px 16px;margin:28px 0;font-size:15px;} .punch b{font-weight:700;}
+  .sectlabel{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:30px 0 6px;display:flex;justify-content:space-between;} .sectlabel .tagl{color:var(--subtle);}
   .locked{background:var(--bg-alt);border:1px dashed var(--border-strong);border-radius:12px;padding:6px 18px;}
-  .lrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;
-    border-bottom:1px solid var(--border);color:var(--muted);}
-  .lrow:last-child{border-bottom:0;} .lrow .lname{font-size:14px;}
-  .lmark{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--subtle);}
-  .unlock{font-size:13px;color:var(--muted);margin:10px 0 0;}
-
-  /* close */
+  .lrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);color:var(--muted);} .lrow:last-child{border-bottom:0;}
+  .lname{font-size:14px;} .lmark{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--subtle);} .unlock{font-size:13px;color:var(--muted);margin:10px 0 0;}
   .close{margin-top:34px;padding-top:26px;border-top:1px solid var(--border);}
-  .nudge{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px;}
-  .closebody{font-size:14px;color:var(--muted);margin:0 0 18px;}
-  .btn{display:inline-block;background:var(--coral);color:#fff;text-decoration:none;
-    font-weight:700;font-size:15px;padding:13px 22px;border-radius:8px;}
-  .alt{font-size:13px;color:var(--subtle);margin-top:12px;}
-  .alt a{color:var(--muted);}
-  .foot{font-size:11px;color:var(--subtle);margin-top:22px;}
-</style>
-</head>
-<body>
-<div class="sheet"><div class="pad">
+  .nudge{font-size:17px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px;} .closebody{font-size:14px;color:var(--muted);margin:0 0 18px;}
+  .btn{display:inline-block;background:var(--coral);color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:8px;}
+  .alt{font-size:13px;color:var(--subtle);margin-top:12px;} .alt a{color:var(--muted);} .foot{font-size:11px;color:var(--subtle);margin-top:22px;}
+  .hint{font-size:12px;color:var(--subtle);margin:14px 0 0;}
+</style></head>
+<body><div class="sheet"><div class="pad">
 
   <div class="eyebrow">The CRM Report Card</div>
   <div class="product">$product_name</div>
 
   <div class="ladder">
-    <div class="stage active">
-      <div class="num">01</div><div class="nm">Completeness</div>
-      <div class="st">You are here</div><div class="cap">Free, from your file</div>
-    </div>
-    <div class="stage locked">
-      <div class="num">02</div><div class="nm">Accuracy</div>
-      <div class="st">Locked</div><div class="cap">Run the plays yourself</div>
-    </div>
-    <div class="stage locked">
-      <div class="num">03</div><div class="nm">Custom</div>
-      <div class="st">Locked</div><div class="cap">Hand-built by Sculpted</div>
-    </div>
+    <div class="stage active"><div class="num">01</div><div class="nm">Completeness</div><div class="st">You are here</div><div class="cap">Free, from your file</div></div>
+    <div class="stage locked"><div class="num">02</div><div class="nm">Accuracy</div><div class="st">Locked</div><div class="cap">Run the plays yourself</div></div>
+    <div class="stage locked"><div class="num">03</div><div class="nm">Custom</div><div class="st">Locked</div><div class="cap">Hand-built by Sculpted</div></div>
   </div>
 
-  <div class="hero">
-    <div class="grade">$overall_grade</div>
-    <div class="meta">
-      <div class="glabel">Completeness grade</div>
-      <div class="verdict">$verdict</div>
-      <div class="count">$record_count records scanned</div>
-    </div>
-  </div>
+  <div class="scope">$scope_line</div>
 
-  <div class="sectlabel"><span>Completeness: what is in your file</span><span class="tagl">deterministic, free</span></div>
-  $fact_rows
+  $segments
+
+  <p class="hint">Every FACT is clickable and cites its own records. Try opening a few above.</p>
 
   $estimate_block
 
-  <div class="punch">This is your <b>completeness</b> grade. It cannot tell you whether the
-    data is <b>accurate</b>, nothing in a static file can. Data can be fully complete and mostly
-    wrong, and complete-but-wrong is the dangerous kind, because it looks fine.</div>
+  <div class="punch">Both grades measure <b>completeness</b>. Neither can tell you if the data is <b>accurate</b>, nothing in a static file can. A book can be fully complete and mostly wrong, and complete-but-wrong is the dangerous kind, because it looks fine.</div>
 
   <div class="sectlabel"><span>Accuracy: unlock stage 02</span><span class="tagl">locked</span></div>
   <div class="locked">
     $accuracy_rows
-    <p class="unlock">Unlock your accuracy grade by running these plays yourself on your own
-      Deepline account (cheap, tried-and-true, shared with you), or have Jacob run them for you.</p>
+    <p class="unlock">Unlock with the cheap, tried-and-true Sculpted plays, shared with you to run yourself, or have Jacob run them for you.</p>
   </div>
 
   <div class="sectlabel"><span>Custom: stage 03</span><span class="tagl">locked</span></div>
   <div class="locked">
     $custom_rows
-    <p class="unlock">Hand-built for your business by Sculpted: the work that cannot be one size
-      fits all.</p>
+    <p class="unlock">Hand-built for your business by Sculpted.</p>
   </div>
 
   <div class="close">
     <p class="nudge">$nudge</p>
-    <p class="closebody">You have your completeness grade. The accuracy grade is one step away, and
-      the fastest path to it is a free session where Jacob runs it on your real data with you.</p>
+    <p class="closebody">You have your completeness grades. The accuracy grade is one step away, fastest via a free session where Jacob runs it on your real data with you.</p>
     <a class="btn" href="$booking_url">Book a free session with Jacob</a>
     <p class="alt">Prefer email? <a href="$mailto">Send Jacob your report card</a>.</p>
     <p class="foot">Read-only. Your rows never left this machine. Made by Sculpted.</p>
   </div>
 
 </div></div>
+<script>
+  document.querySelectorAll('.sigbtn').forEach(function(b){
+    b.addEventListener('click', function(){ b.closest('.sig').classList.toggle('open'); });
+  });
+</script>
 </body></html>

@@ -29,6 +29,7 @@ class RunConfig:
     favorite_customers: list[str] = field(default_factory=list)
     product_name: str = DEFAULT_PRODUCT_NAME
     object_type: str = DEFAULT_OBJECT_TYPE
+    portal_id: str = ""
 
 
 def load_config(path: str) -> RunConfig:
@@ -48,4 +49,5 @@ def load_config(path: str) -> RunConfig:
         favorite_customers=list(raw.get("favorite_customers", [])),
         product_name=raw.get("product_name") or DEFAULT_PRODUCT_NAME,
         object_type=raw.get("object_type") or DEFAULT_OBJECT_TYPE,
+        portal_id=raw.get("portal_id") or "",
     )
