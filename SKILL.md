@@ -155,11 +155,13 @@ Do this as a clear, three-part step, not a fuzzy guess. Never force a mapping
 that is not really there: a companies-only export has no contact name or email,
 and that is completely fine.
 
-**Part 1: confirm the core fields we mapped from their defaults.**
+**Part 1: the standard properties we map to and get by default.**
 Run `crm_report_card.field_mapping.auto_map` on their headers. It maps ONLY
-well-known default property names to the roles the checks use, by exact name, so
-it will not mis-guess. Show them what it mapped, plainly, for a quick yes or no,
-for example:
+well-known default property names (from the default catalogue in
+`properties.yaml`) to the roles the checks use, by exact name, so it will not
+mis-guess. Frame it as: "here are the standard fields we already map to and get
+by default, approve them or change any." Show what it mapped, plainly, for
+example:
 
 ```
 Company name   -> Company name
@@ -172,13 +174,16 @@ If a core role did not map (for example, no email or contact name on a companies
 export), just say so and move on. Do not invent one. If they know the correct
 column for an unmapped role, take it as an override in `field_mapping`.
 
-**Part 2: name the enrichment concepts (these do not come from a column).**
-Tell them, so they are not surprised to see them locked, the things a static
-export cannot contain: **verified employee count** (real accuracy of the band,
-not just whether the size field is filled), **job-change / still-employed
-tracking**, and **email deliverability**. These come from the paid enrichment
-layer, not their CSV, and they appear in the locked section of the card. Never
-fake a number for them here.
+**Part 2: the other information we produce, and where it could go.**
+We also produce things a static export cannot contain. Some are free and already
+on the card: **domain liveness** (live / bot-blocked / dead). Others are the paid
+enrichment layer: **verified employee count** (real band accuracy, not just
+whether the size field is filled), **job-change / still-employed tracking**, and
+**email deliverability**. Tell them what we can get, then ask where it should go:
+do they have a field for it, want us to create one, or just see it on the card?
+Be honest that in this free audit these appear as results and locked rows only;
+writing a value back into their CRM, or creating a property, is the paid
+engagement. Never fake a number for the paid ones here.
 
 **Part 3: pick the extra fields that matter to them (their custom properties).**
 Ask which OTHER columns in their export are important enough that a blank or

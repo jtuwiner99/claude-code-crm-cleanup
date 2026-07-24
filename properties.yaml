@@ -1,42 +1,50 @@
-# properties.yaml — the property catalogue for the CRM Report Card.
+# properties.yaml: property catalogue for the CRM Report Card.
 #
-# Three kinds of properties, matching how the intake maps fields (SKILL.md
-# step 3). This file is a human reference; the runtime source of truth for the
-# default-mapped names is _ROLE_ALIASES in
-# scripts/crm_report_card/field_mapping.py (kept stdlib-only, no yaml at runtime).
+# Seeded from Sculpted's default property catalog for companies and contacts:
+# the standard properties we map to and get by default. This file is a human
+# reference for the intake (SKILL.md step 3). The runtime source of truth for
+# the column-matching aliases is _ROLE_ALIASES in
+# scripts/crm_report_card/field_mapping.py (stdlib-only, no yaml at runtime).
+#
+# "source" tells you what the FREE read-only audit can do with each property:
+#   read    = read it straight from their CSV export (deterministic, free)
+#   enrich  = produced or verified from a live provider (the paid layer); the
+#             free audit can only check fill-rate on a column they already have
+# Writing a value back into their CRM, or creating a new property for it, is the
+# paid enrichment engagement. The free audit reads and reports only.
 
-# 1) DEFAULT-MAPPED
-#    Well-known default property names we map, by EXACT name, to the role a check
-#    uses. auto_map() does this conservatively: exact match only, so it never
-#    mis-guesses, and a role with no exact match is simply left unmapped.
-default_mapped:
-  company_name: [Company name, Company, Account name, Organization]
-  domain:       [Company Domain Name, Domain, Website URL, Website]
-  company_size: [Number of Employees, Employees, Employee count, Headcount]
-  last_activity: [Last Activity Date, Last Modified Date, Last Engagement Date]
-  contact_name: [Contact name, Full name]
-  email:        [Email, Email address, Work email]
+company_defaults:
+  domain:               { source: read,          role: domain,        hubspot: domain }
+  company_name:         { source: read,          role: company_name,  hubspot: name }
+  hubspot_record_id:    { source: read,          role: record_id,     hubspot: hs_object_id }
+  employee_count:       { source: read+enrich,   role: company_size,  hubspot: numberofemployees,
+                          note: "Free tier reads the stored value and checks it is present and consistent. The true current headcount and band accuracy are enrichment." }
+  industry:             { source: enrich,         hubspot: industry }
+  linkedin_company_url: { source: enrich,         hubspot: linkedin_company_page }
+  hq_location:          { source: enrich,         hubspot: "address / city / state / zip / country" }
 
-# 2) ENRICHMENT (default concepts we do NOT map from a column, because a static
-#    export cannot contain them). Verified in the paid tier, shown as locked
-#    rows. Never faked in the free scan.
-enrichment_not_mapped:
-  verified_employee_count:
-    note: True current headcount and band accuracy, not just whether size is filled.
-  still_employed_job_change:
-    note: Whether a contact still works at the on-record company.
-  email_deliverability:
-    note: Whether an address actually accepts mail.
+contact_defaults:
+  first_name:   { source: read,   role: contact_name, hubspot: firstname }
+  last_name:    { source: read,   role: contact_name, hubspot: lastname }
+  company_name: { source: read,   hubspot: company }
+  email:        { source: read,   role: email, hubspot: email }
+  phone:        { source: read,   hubspot: phone }
+  job_title:    { source: enrich, hubspot: jobtitle }
+  linkedin_url: { source: enrich, hubspot: hs_linkedin_url }
+  persona:      { source: enrich, hubspot: hs_persona }
+  seniority:    { source: enrich, hubspot: hs_seniority }
 
-# 3) CUSTOM
-#    Any other column the user says matters. Added by exact header to
-#    critical_properties; the fill-rate FACT then covers it. This is how a user
-#    brings their own properties into the grade.
-custom:
-  examples: [Industry, Company owner, Lifecycle stage, Annual revenue]
-  note: Ask which other columns are critical, then add them by exact header.
+# Information we produce every run regardless, whether or not their CRM has a
+# field for it. On the card these appear as results; wiring them back into their
+# CRM (mapping to an existing property or creating a new one) is the paid tier.
+always_run_derived:
+  domain_liveness:            { free: true,  note: "Live / bot-blocked / dead. Deterministic HTTP check. Already in the free scan." }
+  still_employed_job_change:  { free: false, note: "The comparison is deterministic, but it needs a live profile scrape as input. At cost." }
+  email_deliverability:       { free: false, note: "Whether the mailbox actually accepts mail. Enrichment. At cost." }
+  verified_employee_count:    { free: false, note: "True current headcount and band accuracy. Enrichment. At cost." }
 
-# Free deterministic checks (each produces a FACT row):
-#   duplicates_exact, duplicates_fuzzy, fill_rate, contradiction_size_vs_contacts,
-#   junk_free_mail, junk_generic_inbox, junk_test_records, staleness,
-#   dead_domain_liveness
+# The check roles the free deterministic scan actually uses (auto-mapped from the
+# HubSpot default column labels above; see _ROLE_ALIASES in field_mapping.py):
+#   company_name, domain, company_size, last_activity, email, record_id
+# Any OTHER column the user says matters (Industry, Company owner, a custom
+# field) is added by exact header to critical_properties and gets fill-rate too.
