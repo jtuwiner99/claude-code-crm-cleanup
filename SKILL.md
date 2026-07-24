@@ -244,7 +244,7 @@ Here's what I'll run, and how each is graded:
   Qualified %        one AI read vs your ICP, labeled NOT VERIFIED (a rough guess, not a measure)
 
 Each signal is graded A to F on how bad its rate is:
-  A under 2%, B under 5%, C under 10%, D under 20%, F otherwise.
+  A under 1%, B under 3%, C under 7%, D under 15%, F at 15% or more. Any single F caps your overall at D.
 Your overall grade is the average of the six FACT signals.
 ```
 
