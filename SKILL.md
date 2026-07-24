@@ -50,42 +50,89 @@ Then give a quick tour of what they downloaded, so they can trust it:
 
 Keep it low-pressure. If they want to self-serve, move straight on.
 
-## 2. What the report card actually measures
+## 2. What the report card measures (and what more is possible)
 
-Explain the two kinds of numbers, because the honesty is the whole point:
+Explain it as a ladder, because both the honesty and the range are the point.
+Do not undersell it as "just six checks."
 
-- **Six FACTs** (deterministic, reproducible, no model involved). Same data in,
-  same number out, every time: **duplicates**, **missing critical fields**,
-  **internal contradictions** (for example a company sized at 3 that has 40
-  contacts), **junk records** (free-mail domains posing as companies, generic
-  info@ inboxes, obvious test rows), **stale records** (untouched 12+ months),
-  and **dead domains** (with a real distinction between genuinely dead and just
-  bot-blocked).
-- **One ESTIMATE** (a single-pass model guess at the percent of the book that
-  looks "qualified" against their ICP). It is always labeled **NOT VERIFIED**,
-  and the report spells out exactly why it should not be trusted as a
-  measurement. It is a rough directional read, nothing more.
+**Free, right now (this scan):**
+- **Six FACTs** (deterministic, reproducible, no model). Same data in, same
+  number out: **duplicates**, **missing critical fields**, **internal
+  contradictions** (a company sized at 3 with 40 contacts), **junk records**
+  (free-mail domains posing as companies, generic info@ inboxes, test rows),
+  **stale records** (untouched 12+ months), and **dead domains** (with a real
+  live / bot-blocked / dead distinction).
+- **One ESTIMATE**: a single-pass read of how much of the book looks "qualified"
+  against their ICP, always labeled **NOT VERIFIED**, with the reasons why. A
+  rough directional read, nothing more. (You may run a small custom agent for
+  this ICP-fit pass; it is still an unverified estimate.)
 
-Say the one-liner: everything that computes a FACT is code they can re-run; the
-one ESTIMATE is labeled as a guess.
+**Available at cost, against a live data provider (the enrichment layer):**
+Things a static export cannot prove, which become real, sourced numbers once
+run. Name these so the user sees the full picture; they are not part of the free
+scan:
+- **Verified employee count** (the true current headcount, not just whether the
+  size field is filled, and not the often-wrong band already sitting in the CRM).
+- **Job-change / still-employed tracking** (who on the list still works where the
+  record says they do).
+- **Email validation** (which addresses actually deliver).
+
+These run at cost with the user's own Deepline key. They show up as locked rows
+on the card.
+
+**Premium, custom work (the engagement):**
+- Segmenting the book by company type or vertical, custom fit scoring, and other
+  work that needs definitions built for their specific business. Also locked
+  rows on the card.
+
+Say the one-liner: the free scan gives you honest FACTs plus one labeled guess;
+the sharper verified numbers and the custom work are the paid layers, and the
+card shows you exactly where they would add value.
 
 ## 3. What I need from you (ask one step at a time)
 
-### Step 1: your CRM export
+### Step 1: get their CRM data, with ALL properties
 
-Ask for an export, conversationally. They do not need to know a file path:
+The grade is only as complete as the fields it sees, so **completeness matters
+more than volume**. Give them two options and let them pick. Lay out the honest
+trade before they choose.
 
-> "Export your contacts or companies from your CRM as a CSV, then just tell me
-> where it landed, for example: 'it's in my Downloads, called
-> hubspot-companies.csv.' I'll find it."
+**Option A: CSV export (shares nothing, a little more manual).**
+The safe default. Nothing to trust anyone with.
 
-Guidance to give them:
-- A **representative sample of about 250 companies is plenty** to get a real
+- In HubSpot, open the Companies (or Contacts) list, then Export. **Click
+  "Customize" and choose "All properties on records," not "Properties and
+  associations in your view."** The default only exports the handful of columns
+  currently shown, which would make the grade miss most of the picture.
+- Exporting all properties makes the file large, so **filter the list to about
+  500 records** first for a representative sample. 500 is plenty for a real
   grade; the whole CRM works too if they want the full picture.
-- If they use HubSpot and would rather not export, mention the option: "If
-  you'd prefer, I can walk you through giving me read-only access instead, so I
-  pull the data directly. Your call." (Only offer to walk through it if they
-  want it.)
+- Optional but useful: also export their **property schema** (the full list of
+  their properties) as a CSV, so we can see every field they have, including the
+  empty ones.
+- When it downloads, they just point you at it. **On a Mac, the easiest way to
+  give you the path is to drag the CSV file straight from Finder into the
+  terminal**, which pastes the full path automatically. Or they can just say
+  "it's in my Downloads, called hubspot-companies.csv" and you find it.
+
+**Option B: read-only key (easier and complete, but grants read access).**
+Faster, and it pulls everything, if they are comfortable making a key.
+
+- Walk them through creating a HubSpot private-app token with **READ-ONLY**
+  scopes: Settings > Integrations > Private Apps > Create a private app. On the
+  Scopes tab, check only the READ boxes for Companies, Contacts, and CRM schema
+  (`crm.objects.companies.read`, `crm.objects.contacts.read`,
+  `crm.schemas.companies.read`, `crm.schemas.contacts.read`). **No write scopes,
+  ever.** Create it and copy the token.
+- With the token, pull a ~500-record sample of companies or contacts with all
+  properties, plus the schema, into a CSV, then continue as normal. (Use the
+  HubSpot CRM v3 API: list every property first, then fetch objects requesting
+  all of them, with paging.) They can delete the private app the moment you are
+  done.
+
+Be straight about the trade: **Option A shares nothing but takes a few careful
+clicks; Option B is easier and complete but means handing over a read-only key.**
+Their call, no wrong answer.
 
 ### Step 2: your ICP (who a good customer is)
 

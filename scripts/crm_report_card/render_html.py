@@ -22,8 +22,19 @@ def _pct(rate: float) -> str:
 
 
 def locked_rows(cfg: RunConfig) -> list[str]:
-    rows = [f"Segment your book by {p} [locked]" for p in cfg.critical_properties]
-    rows += ["Custom fit scoring [locked]", "Market by segment [locked]"]
+    # The locked section: what the free scan does not deliver. Two layers, so the
+    # user sees the whole ladder: enrichment they can run at cost, and custom
+    # work that is the engagement. Personalized with the fields they said matter.
+    rows = [
+        "Verified employee count, real accuracy not just fill rate [enrichment]",
+        "Job-change and still-employed tracking [enrichment]",
+        "Email validation and deliverability [enrichment]",
+    ]
+    rows += [f"Custom rules and scoring for your {p} data [custom]" for p in cfg.critical_properties]
+    rows += [
+        "Segment your book by company type or vertical [custom]",
+        "Custom fit scoring against your ICP [custom]",
+    ]
     return rows
 
 
