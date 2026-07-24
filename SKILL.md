@@ -95,12 +95,20 @@ The grade is only as complete as the fields it sees, so **completeness matters
 more than volume**. Give them two options and let them pick. Lay out the honest
 trade before they choose.
 
-Also note whether they are exporting **companies or contacts**. You will record
-this as `object_type` (`"company"` or `"contact"`) in the run-config, and it
-genuinely changes the checks: on a contacts file, duplicates are keyed on
-**email** (so five real people at one company are not counted as duplicates),
-and the live-website check keys on each contact's **email domain**. Get this
-right, or a contacts file will grade as if it were a companies file.
+**Ask which objects they want graded: companies, contacts, or both.** Get an
+export for each one they pick. Both is ideal: they render as two segments in one
+report. Record each object's kind as `object_type` (`"company"` or `"contact"`),
+which changes the checks: contacts dedup on **email** (so five real people at one
+company are not counted as duplicates) and get **orphaned** + **invalid-email**
+signals; only **companies** get the dead-domain check. Grade a contacts file as a
+company file and the numbers will be wrong.
+
+**Also ask for their HubSpot portal ID (optional but great).** It is just the
+number in any HubSpot URL: `app.hubspot.com/contacts/`**`<PORTAL_ID>`**`/...`
+(or Settings > Account & Billing). With it, every cited record on the card
+becomes a one-click **verify** deep-link that opens that record in their own
+HubSpot, no access needed on our side since they are already logged in. Without
+it, the card falls back to the CSV row number. Record it as `portal_id`.
 
 **Option A: CSV export (shares nothing, a little more manual).**
 The safe default. Nothing to trust anyone with.
@@ -201,13 +209,16 @@ Company owner, Lifecycle stage, or a custom field. Add each one by its exact
 column name to `critical_properties`; the fill-rate FACT then covers it too.
 This is how they bring their own properties into the grade.
 
-Then write `run-config.json`. You do **not** ask for any contact or booking
-details; the "Work with Jacob" offer is baked into the tool
-(`DEFAULT_CONTACT_EMAIL` / `DEFAULT_BOOKING_URL` in `config.py`).
+Then write a `run-config.json` for **each object** they chose (companies and/or
+contacts). Each carries that object's `object_type` and `critical_properties`,
+plus the shared `portal_id`. You do **not** ask for contact or booking details;
+the "Work with Jacob" offer is baked in (`config.py`). Save each as its own file,
+e.g. `run-config-company.json` and `run-config-contact.json`.
 
 ```json
 {
-  "object_type": "contact",
+  "object_type": "company",
+  "portal_id": "24177200",
   "icp_nl": "US-based B2B SaaS companies, 50 to 500 employees, modern tech stack",
   "critical_properties": ["company_size", "Industry", "Company owner"],
   "field_mapping": { "domain": "Company Domain Name", "last_activity": "Last Activity Date" },
@@ -215,13 +226,12 @@ details; the "Work with Jacob" offer is baked into the tool
 }
 ```
 
-`object_type` is `"company"` or `"contact"` (defaults to `"company"` if omitted,
-so always set it for a contacts export). `field_mapping` only needs entries for
-roles `auto_map` missed.
+`object_type` is `"company"` or `"contact"`. `portal_id` is optional (it powers
+the verify deep-links; omit it and the card shows CSV row numbers instead).
+`field_mapping` only needs entries for roles `auto_map` missed.
 `critical_properties` may be a canonical role (`company_size`, `email`, ...) OR
-the exact header of any custom column they care about (like `Industry`); the
-scan keeps and grades both. The full catalogue of default-mapped roles,
-enrichment concepts, and custom fields lives in `properties.yaml`.
+the exact header of any custom column they care about (like `Industry`); the scan
+keeps and grades both. The full catalogue lives in `properties.yaml`.
 
 ## 3.5 Show the signal menu, then get the go
 
@@ -247,70 +257,70 @@ Your overall grade is the average of the six FACT signals.
 
 Then ask for the go: "Want me to run it?" Only run once they say yes.
 
-## 4. Run the scan (deterministic, no model)
+## 4. Run the scan, once per object
 
-The package uses relative imports, so run it as a module from the repo root:
+Run the scan for each object they chose, as a module from the repo root:
 
 ```bash
 PYTHONPATH=scripts python3 -m crm_report_card.cli scan \
-  --config run-config.json \
-  --csv <path-to-their-export.csv> \
-  --out metrics.json
+  --config run-config-company.json --csv <their-companies-export.csv> \
+  --out company-metrics.json
 ```
 
-This prints the terminal reveal and writes `metrics.json` (per-check rates and
-grades, an overall grade, a decay projection, and an empty `ai_baseline`).
-Domain-liveness makes one HTTPS HEAD request per unique domain in their CSV; to
-run fully offline (for example on the fixture), set `CRM_RC_SKIP_LIVENESS=1`.
+Repeat with `run-config-contact.json`, their contacts export, and
+`contact-metrics.json` if they are grading contacts too. Each writes a metrics
+file with per-check rates, grades, the cited example records, an overall grade,
+and an empty `ai_baseline`. Domain-liveness (companies only) makes one HTTPS HEAD
+request per unique domain; set `CRM_RC_SKIP_LIVENESS=1` for a fully offline run.
 
-**While it runs, plant the next step.** The scan is quick, but kicking it off is
-a natural moment to mention what comes after: "While that runs, one thing worth
-knowing: the sharper numbers, verified headcount, who has moved on, which emails
-still land, come from a set of pre-built plays we can run next. Want to look at
-those once we read your grade?" Keep it light; it is a real next step, not a
-push. (Those plays are the next build.)
+**While it runs, plant the next step** (the accuracy plays), lightly: "While that
+runs, the sharper numbers, verified headcount, who has moved on, which emails
+still land, come from pre-built plays we can run next. Want to look once we read
+your grade?" A real next step, not a push.
 
-## 5. Add the one estimate
+## 5. Add the one estimate, per object
 
-The scan never calls a model. This is the single ESTIMATE line, and it must
-never be presented as a measurement.
-
-1. Read a sample of the loaded CSV (roughly 20 to 50 rows).
-2. Follow `assets/icp-scorer-prompt.md`: derive rules from `icp_nl`, score the
-   sample, and produce `{qualified_estimate, reasons, sample_size}`.
-3. Patch `metrics.json` via the validator (it forces `verified: false`):
+The scan never calls a model; this is the single ESTIMATE line and must never be
+presented as a measurement. For EACH metrics file: read a sample of that object's
+CSV (20 to 50 rows), follow `assets/icp-scorer-prompt.md` to derive
+`{qualified_estimate, reasons, sample_size}`, and patch it in:
 
 ```bash
 PYTHONPATH=scripts python3 - <<'PY'
 import json
 from crm_report_card.ai_baseline import merge_ai_baseline
-metrics = json.load(open("metrics.json"))
-patched = merge_ai_baseline(metrics, {
+f = "company-metrics.json"   # then repeat for contact-metrics.json
+m = json.load(open(f))
+json.dump(merge_ai_baseline(m, {
     "qualified_estimate": 0.35,
-    "reasons": [
-        "single-pass read of a small CSV sample, no evidence grounding per row",
-        "no test bench or locked definition for this ICP yet",
-        "no production QA pass; treat as a rough directional guess only",
-    ],
+    "reasons": ["single-pass read, no evidence grounding per record",
+                "no test bench or locked definition for this ICP yet",
+                "no production QA pass"],
     "sample_size": 40,
-})
-json.dump(patched, open("metrics.json", "w"), indent=2)
+}), open(f, "w"), indent=2)
 PY
 ```
 
-Replace the values with what you actually derived.
+Replace the values with what you actually derived for that object.
 
-## 6. Render the report card to their Downloads folder
+## 6. Build the report card (both objects, one card)
+
+Render into a single folder in their Downloads so the card and its downloadable
+list files sit together (the "Download all" links are relative):
 
 ```bash
-PYTHONPATH=scripts python3 -m crm_report_card.cli render \
-  --metrics metrics.json \
-  --config run-config.json \
-  --out ~/Downloads/crm-report-card.html
+PYTHONPATH=scripts python3 -m crm_report_card.cli report \
+  --config run-config-company.json \
+  --out ~/Downloads/crm-report-card/crm-report-card.html \
+  --lists-dir ~/Downloads/crm-report-card \
+  --company-metrics company-metrics.json --company-csv <their-companies-export.csv> \
+  --contact-metrics contact-metrics.json --contact-csv <their-contacts-export.csv>
 ```
 
-This writes a single self-contained HTML file to their Downloads folder, so it
-is easy to find, open, and share.
+Include only the `--company-*` or only the `--contact-*` pair if they graded just
+one object. This writes the self-contained interactive card plus a filtered CSV
+per signal (`company-duplicates.csv`, and so on) into that folder. Then open it:
+`open ~/Downloads/crm-report-card/crm-report-card.html`.
 
 ## 7. Read the report card together
 
@@ -330,10 +340,16 @@ Scanning 40 records...
 OVERALL GRADE: D
 ```
 
-Walk them through it live, then open `~/Downloads/crm-report-card.html`. Explain
-plainly:
+Walk them through it live, then open
+`~/Downloads/crm-report-card/crm-report-card.html`. It is one interactive page
+with a Companies and a Contacts segment. Explain plainly:
 
-- **FACT** rows are deterministic and trustworthy: read the code, re-run it.
+- **FACT** rows are deterministic and trustworthy: read the code, re-run it. Each
+  one is **clickable**: it opens the actual cited records, with a **verify** link
+  that deep-links straight to that record in their HubSpot (or the CSV row number
+  when there is no portal ID), plus a **Download all as CSV** of every flagged
+  record for that signal. This is the proof: do not take our word, here are your
+  records.
 - The **ESTIMATE** row is a single-pass guess, labeled NOT VERIFIED, with the
   reasons spelling out why.
 - The **locked rows** (segment their book, custom fit scoring, verified employee
