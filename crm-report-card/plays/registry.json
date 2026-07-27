@@ -7,10 +7,10 @@
       "object_type": "company",
       "label": "Employee-count accuracy, verified vs stored",
       "requires_roles": ["domain", "company_size"],
-      "providers": ["peopledatalabs_enrich_company", "exa_answer"],
-      "cost_per_record_usd": 0.14,
+      "providers": ["icypeas_find_company_url", "exa_answer", "apify_run_actor_sync", "ai_inference"],
+      "cost_per_record_usd": 0.02,
       "default_sample": 100,
-      "comparison_rule": "mismatch = stored and verified fall two or more size bands apart"
+      "comparison_rule": "mismatch = stored count and the LinkedIn associated-member count fall two or more size bands apart. LinkedIn associated members counts profiles that list the company, which runs higher than payroll headcount."
     }
   ]
 }
