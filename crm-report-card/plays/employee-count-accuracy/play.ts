@@ -9,8 +9,8 @@
 // Chain: domain -> LinkedIn company URL (icypeas_find_company_url, falling back
 // to exa_answer on a miss) -> ONE batched scrape of every resolved URL
 // (apify_run_actor_sync, HarvestAPI's linkedin-company actor) -> identity check
-// (deterministic domain match first, ai_inference only on disagreement) ->
-// verified employee count.
+// (deterministic registrable-domain match first, ai_inference only on
+// disagreement) -> verified employee count.
 //
 // Three phases, because the scrape is batched and a per-row call would spawn
 // one Apify actor run per company, which is explicitly not wanted:
@@ -28,6 +28,10 @@
 // String.charAt. Substring checks below are split-based for that reason.
 
 import { definePlay } from 'deepline';
+
+// --- pure helpers: extracted verbatim by tests/test_play_domain_helpers.py.
+// Keep this block free of any import/ctx dependency so it can be evaluated
+// standalone; do not move these functions outside the markers below.
 
 function toolRaw(result: any): any {
   if (result == null) return null;
@@ -61,9 +65,18 @@ function normalizeLinkedInUrl(value: any): string {
   return url;
 }
 
-// Strip scheme, "www.", and any path or query, so a stored bare domain and a
-// scraped full website URL compare equal when they name the same company.
-function domainOnly(value: any): string {
+// True when the URL actually points at a LinkedIn company page, so a
+// hallucinated Exa answer cannot spend a batch scrape slot on a URL that was
+// never going to be scrapeable in the first place. Split-based containment
+// test, no .indexOf, per the restricted plays lib.
+function isLinkedInCompanyUrl(value: any): boolean {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return false;
+  return text.split('linkedin.com/company/').length > 1;
+}
+
+// Strip scheme, "www.", and any path or query, leaving a bare hostname.
+function hostnameOnly(value: any): string {
   let text = String(value || '').trim().toLowerCase();
   if (!text) return '';
   const schemeSplit = text.split('://');
@@ -76,6 +89,34 @@ function domainOnly(value: any): string {
   return rest;
 }
 
+// Common two-part public suffixes where the registrable domain is the last
+// THREE labels, not the last two ("example.co.uk", not "co.uk"). A suffix
+// missing from this list just means an extra ai_inference call on that row,
+// which is the safe direction, so a small static list is correct here rather
+// than a dependency.
+const TWO_PART_PUBLIC_SUFFIXES = [
+  'co.uk', 'com.au', 'co.nz', 'co.za', 'com.br', 'co.jp', 'com.mx', 'co.in',
+];
+
+// The registrable domain (eTLD+1), so a subdomain such as "get.stripe.com"
+// compares equal to the registered domain "stripe.com" instead of failing
+// the deterministic identity check and falling through to ai_inference.
+function registrableDomain(value: any): string {
+  const host = hostnameOnly(value);
+  if (!host) return '';
+  const labels = host.split('.');
+  if (labels.length <= 2) return host;
+  const lastTwo = labels.slice(-2).join('.');
+  let suffixLabelCount = 2;
+  for (const suffix of TWO_PART_PUBLIC_SUFFIXES) {
+    if (suffix === lastTwo) {
+      suffixLabelCount = 3;
+      break;
+    }
+  }
+  return labels.slice(-suffixLabelCount).join('.');
+}
+
 // "5001-10000" from { start: 5001, end: 10000 }, or empty when unavailable.
 function formatRange(range: any): string {
   if (!range || typeof range !== 'object') return '';
@@ -84,6 +125,8 @@ function formatRange(range: any): string {
   if (start === null || start === undefined || end === null || end === undefined) return '';
   return `${start}-${end}`;
 }
+
+// --- end pure helpers ---
 
 export default definePlay(
   'crm-report-card-employee-count-accuracy',
@@ -134,7 +177,9 @@ export default definePlay(
           const raw = toolRaw(exa) || {};
           const answer = raw.answer || {};
           const url = answer.linkedin_url;
-          return url ? String(url) : null;
+          // Reject anything that is not actually a LinkedIn company page
+          // before it can spend a batch scrape slot on a hallucinated URL.
+          return url && isLinkedInCompanyUrl(url) ? String(url) : null;
         } catch (err) {
           // Best effort: a provider miss is not a failed row.
           return null;
@@ -211,8 +256,8 @@ export default definePlay(
           return { verified_employee_count: '', source: '', verified_range: '', identity_method: 'not-scraped' };
         }
 
-        const scrapedDomain = domainOnly(company.website);
-        const storedDomain = domainOnly(domain);
+        const scrapedDomain = registrableDomain(company.website);
+        const storedDomain = registrableDomain(domain);
 
         let verifiedIdentity = false;
         let identityMethod = '';
