@@ -2,7 +2,18 @@
 from __future__ import annotations
 from datetime import date, datetime
 
-_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%Y-%m-%dT%H:%M:%S")
+# Ordered most-specific first. HubSpot CSV exports use a SPACE separator
+# ("2026-04-24 18:02"), not the ISO "T" — omitting that silently sent every
+# date to `unparseable`, which the rate then skipped, grading a fully stale
+# book as A. Normalizing "T" to a space lets one set of formats cover both.
+_FORMATS = (
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d",
+    "%m/%d/%Y %H:%M:%S",
+    "%m/%d/%Y %H:%M",
+    "%m/%d/%Y",
+)
 _MAX_EXAMPLES = 12
 
 
@@ -10,10 +21,13 @@ def _parse(text: str):
     text = (text or "").strip()
     if not text:
         return None
+    # Treat the ISO "T" separator and a trailing "Z" as the space-separated form.
+    normalized = text.replace("T", " ", 1)
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1].strip()
     for fmt in _FORMATS:
         try:
-            return datetime.strptime(text[:len(text)], fmt).date() if fmt != "%Y-%m-%dT%H:%M:%S" \
-                else datetime.strptime(text[:19], fmt).date()
+            return datetime.strptime(normalized, fmt).date()
         except ValueError:
             continue
     return None

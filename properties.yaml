@@ -23,10 +23,19 @@ company_defaults:
   linkedin_company_url: { source: enrich,         hubspot: linkedin_company_page }
   hq_location:          { source: enrich,         hubspot: "address / city / state / zip / country" }
 
+# Contacts map PERSON properties only. A contact does not carry the company's
+# headcount: HubSpot's contact-level "Company size" was 0.2% filled on a real
+# 848-record book, so mapping it graded a company property on the wrong object.
+# `company_size` is therefore company-only (see _OBJECT_EXCLUDED_ROLES).
 contact_defaults:
   first_name:   { source: read,   role: contact_name, hubspot: firstname }
   last_name:    { source: read,   role: contact_name, hubspot: lastname }
-  company_name: { source: read,   hubspot: company }
+  company_name: { source: read,   hubspot: company,
+                  note: "Denormalized text field, often blank even on a properly associated contact. Used only as a label and as the orphan fallback when the export has no association column." }
+  associated_company_id: { source: read, role: associated_company_id, hubspot: associatedcompanyid,
+                  note: "The REAL contact->company link. What the orphaned check grades. Grading on company_name instead reported 41.2% orphaned where the truth was 10.0%." }
+  email_domain: { source: read,   role: domain, hubspot: hs_email_domain,
+                  note: "The contact's domain role. 97.3% filled vs 20.8% for the contact-level Website URL, which is that person's own site and is never mapped here. If absent, the loader derives it from the email address." }
   email:        { source: read,   role: email, hubspot: email }
   phone:        { source: read,   hubspot: phone }
   job_title:    { source: enrich, hubspot: jobtitle }
@@ -54,7 +63,10 @@ custom_classification_examples:
   - icp_fit_score           # per-record fit against the ICP
 
 # The check roles the free deterministic scan actually uses (auto-mapped from the
-# HubSpot default column labels above; see _ROLE_ALIASES in field_mapping.py):
-#   company_name, domain, company_size, last_activity, email, record_id
+# HubSpot default column labels above; see _ROLE_ALIASES in field_mapping.py).
+# Mapping is object-aware, so the role set differs:
+#   companies: company_name, domain, company_size, last_activity, record_id
+#   contacts:  contact_name (first/last), email, domain (= email domain),
+#              company_name, associated_company_id, last_activity, record_id
 # Any OTHER column the user says matters (Industry, Company owner, a custom
 # field) is added by exact header to critical_properties and gets fill-rate too.

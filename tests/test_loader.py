@@ -44,6 +44,14 @@ def test_load_records_derives_domain_from_email_for_contacts(tmp_path):
     assert records[0]["domain"] == "acme.com"
 
 
+def test_load_records_prefers_email_domain_over_website_for_contacts(tmp_path):
+    path = _csv(tmp_path, "Email,Email Domain,Website URL\n"
+                          "jane@acme.com,acme.com,janes-blog.example\n")
+    records, mapping = load_records(path, {}, object_type="contact")
+    assert mapping["domain"] == "Email Domain"
+    assert records[0]["domain"] == "acme.com"
+
+
 def test_load_records_does_not_derive_domain_from_email_for_companies(tmp_path):
     path = _csv(tmp_path, "First Name,Email\nJane, jane@acme.com \n")
     records, _ = load_records(path, {})

@@ -34,3 +34,39 @@ def test_accepts_us_dates():
     out = check_staleness(recs, today=date(2026, 7, 22))
     assert out["stale_count"] == 1
     assert out["offending_ids"] == ["0"]
+
+
+def test_accepts_hubspot_space_separated_datetimes():
+    """HubSpot CSV exports use 'YYYY-MM-DD HH:MM' (space, not 'T').
+
+    Regression: these silently fell into `unparseable` and were skipped, so a
+    book where every record was stale still graded A.
+    """
+    recs = [
+        {"record_id": "0", "last_activity": "2024-04-09 15:00"},   # stale
+        {"record_id": "1", "last_activity": "2026-04-24 18:02"},   # fresh
+    ]
+    out = check_staleness(recs, today=date(2026, 7, 27), months=12)
+    assert out["unparseable"] == 0
+    assert out["stale_count"] == 1
+    assert out["offending_ids"] == ["0"]
+
+
+def test_accepts_seconds_and_iso_t_separator():
+    recs = [
+        {"record_id": "0", "last_activity": "2024-04-09 15:00:31"},
+        {"record_id": "1", "last_activity": "2024-04-09T15:00:31"},
+    ]
+    out = check_staleness(recs, today=date(2026, 7, 27), months=12)
+    assert out["unparseable"] == 0
+    assert out["stale_count"] == 2
+
+
+def test_unparseable_counts_only_genuinely_bad_values():
+    recs = [
+        {"record_id": "0", "last_activity": "not a date"},
+        {"record_id": "1", "last_activity": ""},
+    ]
+    out = check_staleness(recs, today=date(2026, 7, 27), months=12)
+    assert out["unparseable"] == 2
+    assert out["stale_count"] == 0

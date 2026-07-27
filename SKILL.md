@@ -133,7 +133,10 @@ The safe default. Nothing to trust anyone with.
 - In HubSpot, open the Companies (or Contacts) list, then Export. **Click
   "Customize" and choose "All properties on records," not "Properties and
   associations in your view."** The default only exports the handful of columns
-  currently shown, which would make the grade miss most of the picture.
+  currently shown, which would make the grade miss most of the picture. On a
+  contacts export, check that `Associated Company ID` came through: that column
+  is what the orphaned check grades, and without it the check falls back to the
+  much blanker "Company Name" text field and overstates the orphan rate.
 - Exporting all properties makes the file large, so **filter the list to about
   500 records** first for a representative sample. 500 is plenty for a real
   grade; the whole CRM works too if they want the full picture.
@@ -188,21 +191,47 @@ that is not really there: a companies-only export has no contact name or email,
 and that is completely fine.
 
 **Part 1: the standard properties we map to and get by default.**
-Run `crm_report_card.field_mapping.auto_map` on their headers. It maps ONLY
-well-known default property names (from the default catalogue in
-`properties.yaml`) to the roles the checks use, by exact name, so it will not
-mis-guess. Frame it as: "here are the standard fields we already map to and get
-by default, approve them or change any." Show what it mapped, with the HubSpot
-internal name in parentheses (from `ROLE_HUBSPOT_INTERNAL` in field_mapping.py),
-so they recognize the underlying field, for example:
+Run `crm_report_card.field_mapping.auto_map(headers, object_type)` on their
+headers. It maps ONLY well-known default property names (from the default
+catalogue in `properties.yaml`) to the roles the checks use, by exact name, so it
+will not mis-guess. **Always pass the object type** — the role set is different
+per object and mapping a contacts file as a company file quietly grades the wrong
+columns. Frame it as: "here are the standard fields we already map to and get by
+default, approve them or change any." Show what it mapped, with the HubSpot
+internal name in parentheses (from `hubspot_internal(role, object_type)` in
+field_mapping.py), so they recognize the underlying field, for example:
 
 ```
-Company name   -> Company name         (name)
-Domain         -> Company Domain Name  (domain)
-Company size   -> Number of Employees  (numberofemployees)
-Last activity  -> Last Activity Date   (notes_last_updated)
-Record ID      -> Record ID            (hs_object_id)
+companies
+Company name   -> Company name          (name)
+Domain         -> Company Domain Name   (domain)
+Company size   -> Number of Employees   (numberofemployees)
+Last activity  -> Last Activity Date    (notes_last_updated)
+Record ID      -> Record ID             (hs_object_id)
+
+contacts
+Contact name   -> First Name / Last Name  (firstname / lastname)
+Email          -> Email                   (email)
+Domain         -> Email Domain            (hs_email_domain)
+Company link   -> Associated Company ID   (associatedcompanyid)
+Last activity  -> Last Activity Date      (notes_last_updated)
+Record ID      -> Record ID               (hs_object_id)
 ```
+
+Two rules the mapper enforces, both learned the hard way on a real book:
+
+- **Contacts take their domain from Email Domain, never a website column.** On a
+  contact, "Website URL" is that person's own site (20.8% filled) while Email
+  Domain comes off their email address (97.3% filled). Same information, four
+  times the coverage. If there is no email-domain column, the loader derives it
+  from the email address, which is the identical signal.
+- **We never map a COMPANY property onto a contact.** HubSpot's contact-level
+  "Company size" was filled on 2 of 848 records, so grading it would have
+  reported a meaningless 99.8% blank. `company_size` is companies-only, and an
+  override cannot put it back on contacts. The contact's link to its company is
+  `Associated Company ID`, the real association, not the denormalized
+  "Company Name" text field, which sits blank on plenty of properly associated
+  contacts (grading on it reported 41.2% orphaned where the truth was 10.0%).
 
 If a core role did not map (for example, no email or contact name on a companies
 export), just say so and move on. Do not invent one. If they know the correct
@@ -253,7 +282,10 @@ the verify deep-links; omit it and the card shows CSV row numbers instead).
 `field_mapping` only needs entries for roles `auto_map` missed.
 `critical_properties` may be a canonical role (`company_size`, `email`, ...) OR
 the exact header of any custom column they care about (like `Industry`); the scan
-keeps and grades both. The full catalogue lives in `properties.yaml`.
+keeps and grades both. Roles are object-scoped: `company_size` is companies-only
+and `associated_company_id` is contacts-only, and an override in `field_mapping`
+cannot map a role onto an object it does not belong to. The full catalogue lives
+in `properties.yaml`.
 
 ## 3.5 Show the signal menu, then get the go
 
@@ -266,16 +298,27 @@ Here's what I'll run, and how each is graded:
 
   Duplicates         exact domain match + fuzzy name match (legal suffixes stripped)
   Missing fields     % blank on the fields you named as critical
-  Contradictions     stated size vs. the number of distinct contacts on a domain
   Junk               free-mail-as-company, generic info@/sales@ inboxes, test/demo rows
   Stale              records with no activity in 12+ months
-  Dead domains       HEAD ping per domain: live / bot-blocked / dead (blocked is not dead)
+  Contradictions     stated size vs. distinct contacts on a domain    (companies only)
+  Dead domains       HEAD ping per domain: live / bot-blocked / dead  (companies only)
+  Orphaned           contacts with no associated company              (contacts only)
+  Invalid email      malformed email addresses                        (contacts only)
   Qualified %        one AI read vs your ICP, labeled NOT VERIFIED (a rough guess, not a measure)
 
 Each signal is graded A to F on how bad its rate is:
   A under 1%, B under 3%, C under 7%, D under 15%, F at 15% or more. Any single F caps your overall at D.
-Your overall grade is the average of the six FACT signals.
+Your overall grade is the average of every FACT signal we could measure on your file.
 ```
+
+Show only the rows that apply to the object you are grading, and only the ones
+the scan can actually measure on their file. **Contradictions is companies-only
+AND needs an email column**: it compares stated company size against the distinct
+contacts seen on that domain. Company size is deliberately never mapped onto
+contacts, and a standard HubSpot companies export carries no email to count, so
+in both cases the comparison never fires. The scan omits the check rather than
+printing a flattering 0.0% (A) for something it never measured, so do not promise
+a row that will not appear.
 
 Then ask for the go: "Want me to run it?" Only run once they say yes.
 

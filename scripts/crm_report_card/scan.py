@@ -20,21 +20,16 @@ _ANNUAL_ROT = 0.30
 def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> dict:
     dup = check_duplicates(records, object_type=cfg.object_type)
     fill = check_fill_rate(records, cfg.critical_properties)
-    contra = check_contradictions(records)
     junk = check_junk(records)
     stale = check_staleness(records, today=today)
 
     dup["grade"] = grade_rate(dup["duplicate_rate"])
     fill["grade"] = grade_rate(fill["overall_missing_rate"])
-    contra["grade"] = grade_rate(contra["rate"])
     junk["grade"] = grade_rate(junk["junk_rate"])
     stale["grade"] = grade_rate(stale["stale_rate"])
 
-    facts = {
-        "duplicates": dup, "fill_rate": fill, "contradictions": contra,
-        "junk": junk, "staleness": stale,
-    }
-    grades = [dup["grade"], fill["grade"], contra["grade"], junk["grade"], stale["grade"]]
+    facts = {"duplicates": dup, "fill_rate": fill, "junk": junk, "staleness": stale}
+    grades = [dup["grade"], fill["grade"], junk["grade"], stale["grade"]]
 
     if cfg.object_type == "contact":
         orphaned = check_orphaned(records)
@@ -45,6 +40,20 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
         facts["email_format"] = email_format
         grades += [orphaned["grade"], email_format["grade"]]
     else:
+        # Contradictions compare the STATED company size against the number of
+        # distinct contacts on a domain, so it needs BOTH of those inputs. It is
+        # a company-object check (we do not map company size onto contacts), and
+        # even on a companies file it is only reportable when the export carries
+        # emails: a standard HubSpot companies export has no email column, so
+        # the comparison never fires and the check would print a structural
+        # 0.0% (A) for something it never measured. Omit it instead.
+        has_size = any((rec.get("company_size") or "").strip() for rec in records)
+        has_email = any((rec.get("email") or "").strip() for rec in records)
+        if has_size and has_email:
+            contra = check_contradictions(records)
+            contra["grade"] = grade_rate(contra["rate"])
+            facts["contradictions"] = contra
+            grades.append(contra["grade"])
         live = check_liveness(records, fetcher=fetcher or default_fetcher)
         live["grade"] = grade_rate(live["dead_rate"])
         facts["liveness"] = live

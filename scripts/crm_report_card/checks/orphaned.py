@@ -5,13 +5,26 @@ _MAX_EXAMPLES = 12
 
 
 def check_orphaned(records: list[dict]) -> dict:
+    """Flag contacts with no associated company.
+
+    Prefers the real association (`associated_company_id`) and only falls back
+    to the denormalized `company_name` text field when the export has no
+    association column. HubSpot contacts frequently carry a valid association
+    while that text field sits blank, so grading on the name alone overstated
+    the orphan rate several-fold.
+    """
     total = len(records)
+    # Only trust the association field if the export actually carries it.
+    has_assoc_column = any((rec.get("associated_company_id") or "").strip() for rec in records)
     orphaned_count = 0
     offending_ids: list[str] = []
     examples: list[dict] = []
     for rec in records:
-        name = (rec.get("company_name") or "").strip()
-        if not name:
+        if has_assoc_column:
+            linked = (rec.get("associated_company_id") or "").strip()
+        else:
+            linked = (rec.get("company_name") or "").strip()
+        if not linked:
             orphaned_count += 1
             rid = rec.get("record_id", "")
             offending_ids.append(rid)

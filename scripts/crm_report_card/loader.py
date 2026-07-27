@@ -9,7 +9,7 @@ def load_records(csv_path: str, overrides: dict[str, str],
     with open(csv_path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         headers = reader.fieldnames or []
-        mapping = resolve_mapping(headers, overrides)
+        mapping = resolve_mapping(headers, overrides, object_type=object_type)
         has_id = "record_id" in mapping
         header_set = set(headers)
         extras = [col for col in extra_columns if col in header_set]
