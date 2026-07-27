@@ -41,7 +41,10 @@ def test_cta_details_are_optional_and_default(tmp_path):
     })
     cfg = load_config(path)
     assert cfg.contact_email == "jacob@sculpted.agency"
-    assert cfg.booking_url.startswith("http")
+    # The real booking link, not a placeholder. It is the call-to-action button
+    # on every rendered card, so a stale default is a dead button.
+    assert cfg.booking_url == ("https://meetings.hubspot.com/tuwiner/"
+                               "sculpted-intro-meeting")
 
 
 def test_object_type_defaults_to_company(tmp_path):

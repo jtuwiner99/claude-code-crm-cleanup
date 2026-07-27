@@ -199,7 +199,7 @@ and that is completely fine.
 Run `crm_report_card.field_mapping.auto_map(headers, object_type)` on their
 headers. It maps ONLY well-known default property names (from the default
 catalogue in `properties.yaml`) to the roles the checks use, by exact name, so it
-will not mis-guess. **Always pass the object type** — the role set is different
+will not mis-guess. **Always pass the object type**, because the role set is different
 per object and mapping a contacts file as a company file quietly grades the wrong
 columns. Frame it as: "here are the standard fields we already map to and get by
 default, approve them or change any." Show what it mapped, with the HubSpot

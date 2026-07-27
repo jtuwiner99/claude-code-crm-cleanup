@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 # Ordered most-specific first. HubSpot CSV exports use a SPACE separator
-# ("2026-04-24 18:02"), not the ISO "T" — omitting that silently sent every
+# ("2026-04-24 18:02"), not the ISO "T". Omitting that silently sent every
 # date to `unparseable`, which the rate then skipped, grading a fully stale
 # book as A. Normalizing "T" to a space lets one set of formats cover both.
 _FORMATS = (

@@ -10,7 +10,7 @@ DEFAULT_PRODUCT_NAME = "The CRM Report Card"
 # running this should never be prompted to configure someone else's contact
 # details, and doing so would expose the tool as a marketing funnel.
 DEFAULT_CONTACT_EMAIL = "jacob@sculpted.agency"
-DEFAULT_BOOKING_URL = "https://cal.com/jacob"  # placeholder: set to the real booking link
+DEFAULT_BOOKING_URL = "https://meetings.hubspot.com/tuwiner/sculpted-intro-meeting"
 
 # Valid values for RunConfig.object_type. Companies dedup on domain+name;
 # contacts dedup on email identity (see checks/duplicates.py).

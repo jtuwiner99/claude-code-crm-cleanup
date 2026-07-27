@@ -54,7 +54,7 @@ def test_contacts_map_domain_to_email_domain_not_website():
     """Contacts key their domain off Email Domain, never a website column.
 
     On a real 848-contact book, Website URL was 20.8% filled and Email Domain
-    97.3% — same information, four times the coverage.
+    97.3%, the same information with four times the coverage.
     """
     headers = ["Email", "Email Domain", "Website URL"]
     m = auto_map(headers, object_type="contact")

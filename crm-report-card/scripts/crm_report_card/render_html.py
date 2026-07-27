@@ -424,7 +424,9 @@ _LOCKED_COPY = {
 _UNLOCKED_COPY = {
     "stage_02": ('<div class="stage active"><div class="num">02</div>'
                  '<div class="nm">Accuracy</div><div class="st">Unlocked</div>'
-                 '<div class="cap">Verified on a sample</div></div>'),
+                 # Not "verified on a sample": a play can run and come back with
+                 # nothing comparable, and the chip must not claim otherwise.
+                 '<div class="cap">Run on a sample of your book</div></div>'),
     "punch": ("The grades above measure <b>completeness</b>. No static file can grade "
               "<b>accuracy</b>, so the accuracy rows below were measured a different "
               "way: a random sample of your records checked against live sources. A "
