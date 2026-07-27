@@ -104,3 +104,71 @@ def test_unlock_reports_a_bad_fragment_without_a_traceback(tmp_path, capsys):
                "--fragment", str(p / "frag.json"), "--out", str(p / "metrics.json")])
     assert rc == 2
     assert "unknown unlock key" in capsys.readouterr().err
+
+
+def test_plays_reports_a_missing_registry_without_a_traceback(tmp_path, capsys):
+    p = _setup(tmp_path)
+    missing = p / "does-not-exist.json"
+    rc = main(["plays", "--registry", str(missing),
+               "--config", str(p / "config.json"), "--csv", str(p / "book.csv"),
+               "--out", str(p / "plays.json")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert str(missing) in err
+
+
+def test_plays_reports_a_malformed_registry_without_a_traceback(tmp_path, capsys):
+    p = _setup(tmp_path)
+    registry_path = p / "registry.json"
+    registry_path.write_text("{not valid json")
+    rc = main(["plays", "--registry", str(registry_path),
+               "--config", str(p / "config.json"), "--csv", str(p / "book.csv"),
+               "--out", str(p / "plays.json")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "invalid JSON" in err
+    assert str(registry_path) in err
+
+
+def test_unlock_reports_a_missing_metrics_file_without_a_traceback(tmp_path, capsys):
+    p = _setup(tmp_path)
+    missing = p / "does-not-exist-metrics.json"
+    (p / "frag.json").write_text(json.dumps({
+        "unlock": "employee_count_accuracy", "object_type": "company",
+        "sample_size": 2, "checked": 2, "mismatched": 1, "rate": 0.5,
+        "unverifiable": 0, "skipped_blank": 0, "examples": [], "offending_ids": ["0"],
+        "provider": "peopledatalabs_enrich_company", "run_at": "2026-07-27"}))
+    rc = main(["unlock", "--metrics", str(missing),
+               "--fragment", str(p / "frag.json"), "--out", str(p / "out.json")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert str(missing) in err
+
+
+def test_sample_reports_an_unknown_play_id_without_a_traceback(tmp_path, capsys):
+    p = _setup(tmp_path)
+    rc = main(["sample", "--registry", str(p / "registry.json"),
+               "--play", "no-such-play",
+               "--config", str(p / "config.json"), "--csv", str(p / "book.csv"),
+               "--out", str(p / "sample.csv")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "no play with id" in err
+    assert "no-such-play" in err
+
+
+def test_fragment_reports_an_unknown_play_id_without_a_traceback(tmp_path, capsys):
+    p = _setup(tmp_path)
+    (p / "rows.csv").write_text(
+        "record_id,domain,stored_employee_count,verified_employee_count,source\n"
+        "0,acme.com,10,900,peopledatalabs\n"
+    )
+    rc = main(["fragment", "--registry", str(p / "registry.json"),
+               "--play", "no-such-play", "--rows", str(p / "rows.csv"),
+               "--out", str(p / "frag.json")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "no play with id" in err
+    assert "no-such-play" in err

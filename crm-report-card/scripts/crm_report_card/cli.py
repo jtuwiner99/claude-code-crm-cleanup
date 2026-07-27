@@ -32,10 +32,25 @@ def _cmd_scan(args) -> int:
     return 0
 
 
+def _read_json(path):
+    """Read and parse a JSON file, raising a message that names the path.
+
+    json.JSONDecodeError does not include the file path in its message, so a
+    malformed metrics/fragment file would otherwise surface a location-free
+    "Expecting value: ..." error. Wrapping every JSON read cli.py itself
+    performs means the central error handler in main() always has a path to
+    show the user.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in {path}: {exc}") from exc
+
+
 def _cmd_render(args) -> int:
     cfg = load_config(args.config)
-    with open(args.metrics, encoding="utf-8") as fh:
-        metrics = json.load(fh)
+    metrics = _read_json(args.metrics)
     html = render_html(metrics, cfg)
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(html)
@@ -44,8 +59,7 @@ def _cmd_render(args) -> int:
 
 
 def _load_object(object_type, metrics_path, csv_path, cfg, lists_dir):
-    with open(metrics_path, encoding="utf-8") as fh:
-        metrics = json.load(fh)
+    metrics = _read_json(metrics_path)
     records, _mapping = load_records(csv_path, cfg.field_mapping, object_type=object_type)
     list_files = write_lists(object_type, metrics, records, lists_dir)
     return {"object_type": object_type, "metrics": metrics, "list_files": list_files}
@@ -80,7 +94,10 @@ def _cmd_report(args) -> int:
 
 
 def _registry_or_fail(path):
-    entries = load_registry(path)
+    try:
+        entries = load_registry(path)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in {path}: {exc}") from exc
     errors = validate_registry(entries)
     if errors:
         for err in errors:
@@ -195,10 +212,8 @@ def _cmd_fragment(args) -> int:
 
 
 def _cmd_unlock(args) -> int:
-    with open(args.metrics, encoding="utf-8") as fh:
-        metrics = json.load(fh)
-    with open(args.fragment, encoding="utf-8") as fh:
-        fragment = json.load(fh)
+    metrics = _read_json(args.metrics)
+    fragment = _read_json(args.fragment)
     try:
         merged = merge_fragment(metrics, fragment)
     except ValueError as exc:
@@ -274,7 +289,17 @@ def main(argv: list[str]) -> int:
     p_unlock.set_defaults(func=_cmd_unlock)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        # Backstop for every subcommand (including the pre-existing scan,
+        # render, report): a bad path or a malformed file should read as
+        # "your file has a typo", never as a stack trace. Handlers above this
+        # one (unknown --play id, missing scorer, merge_fragment's own
+        # ValueError) already print a more specific message and return
+        # before an exception would reach here.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
