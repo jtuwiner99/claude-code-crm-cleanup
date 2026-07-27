@@ -62,6 +62,7 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
     n = len(records)
     return {
         "product_name": cfg.product_name,
+        "object_type": cfg.object_type,
         "counts": {"records": n},
         "facts": facts,
         "overall_grade": overall_grade(grades),

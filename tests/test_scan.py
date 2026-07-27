@@ -179,3 +179,13 @@ def test_scan_from_files_contact_mode_does_not_inflate_duplicates(tmp_path):
                               fetcher=lambda d: (200, False))
 
     assert metrics["facts"]["duplicates"]["duplicate_records"] == 0
+
+
+def test_metrics_carries_the_object_type():
+    """A fragment cannot be safely attached to metrics that does not say what
+    object it graded."""
+    recs = [{"record_id": "0", "domain": "acme.com", "company_name": "Acme",
+             "email": "jane@acme.com", "company_size": "100",
+             "last_activity": "2026-06-01"}]
+    metrics = run_scan(recs, _cfg(), today=date(2026, 7, 22), fetcher=lambda d: (200, False))
+    assert metrics["object_type"] == "company"
