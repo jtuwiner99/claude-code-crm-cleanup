@@ -10,27 +10,28 @@ writes back to a CRM and never claims to have fixed anything.
 
 ## Install
 
-This ships as a Claude Code skill. Copy it into your skills directory:
+As a plugin (recommended, gets the accuracy plays too):
 
-```bash
-cp -r crm-report-card ~/.claude/skills/crm-report-card
-```
+    /plugin marketplace add <owner>/claude-code-crm-cleanup
+    /plugin install crm-report-card@sculpted-plugins
 
-(Copy this repo's contents into a `crm-report-card/` folder first if you are
-working from a checkout rather than a packaged skill directory.)
+As a standalone skill (free offline scan only):
+
+    bash scripts/build_bundle.sh
+    cp -R dist/crm-report-card ~/.claude/skills/crm-report-card
 
 ## Quickstart against the bundled fixture
 
 Run everything from the repo root. The package uses relative imports, so
-invoke it as a module with `scripts` on `PYTHONPATH`:
+invoke it as a module with `crm-report-card/scripts` on `PYTHONPATH`:
 
 ```bash
-PYTHONPATH=scripts python3 -m crm_report_card.cli scan \
+PYTHONPATH=crm-report-card/scripts python3 -m crm_report_card.cli scan \
   --config run-config.json \
   --csv fixtures/messy-crm-sample.csv \
   --out metrics.json
 
-PYTHONPATH=scripts python3 -m crm_report_card.cli render \
+PYTHONPATH=crm-report-card/scripts python3 -m crm_report_card.cli render \
   --metrics metrics.json \
   --config run-config.json \
   --out crm-report-card.html

@@ -8,9 +8,9 @@ version = "0.1.0"
 requires-python = ">=3.11"
 
 [tool.setuptools]
-package-dir = {"" = "scripts"}
+package-dir = {"" = "crm-report-card/scripts"}
 packages = ["crm_report_card", "crm_report_card.checks"]
 
 [tool.pytest.ini_options]
-pythonpath = ["scripts"]
+pythonpath = ["crm-report-card/scripts"]
 testpaths = ["tests"]

@@ -17,13 +17,14 @@ OUT="dist/crm-report-card"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-cp SKILL.md README.md "$OUT"/
-cp -R assets "$OUT"/
+cp crm-report-card/skills/crm-report-card/SKILL.md "$OUT"/
+cp README.md "$OUT"/
+cp -R crm-report-card/assets "$OUT"/
 
 # Keep the scripts/crm_report_card/ layout intact so PYTHONPATH=scripts
 # matches SKILL.md and README.md exactly, both outside and inside the bundle.
 mkdir -p "$OUT/scripts"
-cp -R scripts/crm_report_card "$OUT/scripts"/
+cp -R crm-report-card/scripts/crm_report_card "$OUT/scripts"/
 
 mkdir -p "$OUT/fixtures"
 cp fixtures/messy-crm-sample.csv "$OUT/fixtures"/

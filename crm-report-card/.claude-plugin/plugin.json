@@ -1,0 +1,9 @@
+{
+  "name": "crm-report-card",
+  "description": "A CRM data-quality report card: a free offline completeness grade from a CSV export, plus optional accuracy plays you run on your own Deepline account",
+  "version": "0.2.0",
+  "author": {
+    "name": "Sculpted"
+  },
+  "keywords": ["crm", "data-quality", "hubspot", "audit", "enrichment"]
+}

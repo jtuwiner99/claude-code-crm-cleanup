@@ -1,0 +1,16 @@
+{
+  "name": "sculpted-plugins",
+  "owner": {
+    "name": "Sculpted"
+  },
+  "metadata": {
+    "description": "Free CRM data-quality tooling from Sculpted"
+  },
+  "plugins": [
+    {
+      "name": "crm-report-card",
+      "source": "./crm-report-card",
+      "description": "Grade your CRM's completeness for free, then verify its accuracy with cheap self-serve plays"
+    }
+  ]
+}
