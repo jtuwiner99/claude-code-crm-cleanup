@@ -18,14 +18,14 @@ from .scorers import SCORERS
 from .unlock import merge_fragment
 
 
-def _offline_fetcher(_domain):
-    return None, True  # everything "dead" without network; used when liveness is skipped
-
-
 def _cmd_scan(args) -> int:
     cfg = load_config(args.config)
-    fetcher = _offline_fetcher if os.environ.get("CRM_RC_SKIP_LIVENESS") == "1" else None
-    metrics = scan_from_files(args.csv, cfg, today=date.today(), fetcher=fetcher)
+    # CRM_RC_SKIP_LIVENESS omits the dead-domain row entirely. It must never
+    # stand in a fake fetcher: that would report 100% dead and grade an F on a
+    # check that never ran.
+    skip_liveness = os.environ.get("CRM_RC_SKIP_LIVENESS") == "1"
+    metrics = scan_from_files(args.csv, cfg, today=date.today(),
+                              skip_liveness=skip_liveness)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(metrics, fh, indent=2)
     print(render_terminal(metrics))
@@ -177,6 +177,23 @@ def _cmd_sample(args) -> int:
     return 0
 
 
+def _provider_citation(body: dict, play: dict) -> str:
+    """Cite the providers that actually returned the values, with counts.
+
+    These plays are waterfalls: naming `providers[0]` cites one provider for a
+    sample most of which came from another. Counts come from the rows' own
+    `source` column, so the citation cannot drift from the data. A row with no
+    source is not attributed to anyone.
+    """
+    counts = body.get("source_counts") or {}
+    if counts:
+        ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        return ", ".join(f"{name} ({n})" for name, n in ranked)
+    # Nothing came back to attribute. Name what the play was configured to try,
+    # so the provenance line still says who the sample was sent to.
+    return ", ".join(play.get("providers") or [])
+
+
 def _cmd_fragment(args) -> int:
     entries = _registry_or_fail(args.registry)
     if entries is None:
@@ -200,8 +217,11 @@ def _cmd_fragment(args) -> int:
         "unlock": play["unlocks"],
         "object_type": play["object_type"],
         "sample_size": args.sample_size if args.sample_size is not None else len(rows),
-        "provider": args.provider or (play["providers"][0] if play["providers"] else ""),
+        "provider": args.provider or _provider_citation(body, play),
         "run_at": args.run_at or date.today().isoformat(),
+        # What "wrong" means for this play. Without it on the card the rate is
+        # unfalsifiable, and the rule belongs to the play, not the renderer.
+        "comparison_rule": play.get("comparison_rule", ""),
     })
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(fragment, fh, indent=2)
@@ -222,7 +242,17 @@ def _cmd_unlock(args) -> int:
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(merged, fh, indent=2)
     fact = merged["facts"][fragment["unlock"]]
-    print(f"unlocked {fragment['unlock']}: {fact['rate'] * 100:.1f}% ({fact['grade']})")
+    if "grade" not in fact:
+        # Nothing was comparable, so there is no rate and no grade to print.
+        # Printing 0.0% (A) here is what made a run that verified nothing look
+        # like a perfect score.
+        print(f"unlocked {fragment['unlock']}: not measurable, 0 of "
+              f"{fact['sample_size']} sampled records could be compared "
+              f"({fact['unverifiable']} unverifiable, "
+              f"{fact.get('skipped_blank', 0)} skipped because the stored value "
+              f"was blank). No grade.")
+    else:
+        print(f"unlocked {fragment['unlock']}: {fact['rate'] * 100:.1f}% ({fact['grade']})")
     return 0
 
 

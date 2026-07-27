@@ -29,6 +29,8 @@
   .seghead{display:flex;align-items:center;justify-content:space-between;gap:16px;}
   .seghead h2{font-size:24px;font-weight:700;letter-spacing:-.015em;margin:0;} .seghead .cnt{font-size:13px;color:var(--subtle);}
   .gradebadge{font-size:44px;font-weight:800;line-height:1;color:var(--coral);letter-spacing:-.02em;} .gradebadge.ok{color:var(--text);}
+  .grades{display:flex;gap:22px;align-items:flex-start;} .gradecol{text-align:center;}
+  .gradelbl{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--subtle);margin-top:5px;}
   .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0 6px;} @media(max-width:600px){.tiles{grid-template-columns:repeat(2,1fr);}}
   .tile{border:1px solid var(--border);border-radius:12px;padding:14px;} .tile .n{font-size:26px;font-weight:800;letter-spacing:-.02em;} .tile .n.bad{color:var(--coral);} .tile .l{font-size:12px;color:var(--muted);margin-top:2px;}
 
@@ -42,6 +44,9 @@
   .sigval{font-family:var(--mono);font-size:14px;white-space:nowrap;} .sigval .grade{font-weight:700;margin-left:8px;} .sigval .grade.f{color:var(--coral);}
   .bartrack{height:8px;background:var(--track);border-radius:999px;margin:9px 0 7px;overflow:hidden;} .barfill{height:100%;border-radius:999px;background:var(--bar);} .barfill.f{background:var(--coral);}
   .sigexp{font-size:13px;color:var(--muted);margin:0;}
+  .sig.nm{padding:16px 0;} .sig.nm .sigexp{margin-top:9px;}
+  .nmval{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--subtle);white-space:nowrap;}
+  .prov{font-size:12px;line-height:1.45;color:var(--subtle);margin:0 0 16px;}
   .detail{display:none;padding:4px 0 18px;} .sig.open .detail{display:block;}
   .exhead{font-size:12px;color:var(--subtle);margin:2px 0 8px;}
   .ex{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:8px 12px;background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;}
@@ -54,6 +59,7 @@
   .punch{border-left:2px solid var(--coral);padding:4px 0 4px 16px;margin:28px 0;font-size:15px;} .punch b{font-weight:700;}
   .sectlabel{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:30px 0 6px;display:flex;justify-content:space-between;} .sectlabel .tagl{color:var(--subtle);}
   .locked{background:var(--bg-alt);border:1px dashed var(--border-strong);border-radius:12px;padding:6px 18px;}
+  .unlockedbox{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:6px 18px;}
   .lrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);color:var(--muted);} .lrow:last-child{border-bottom:0;}
   .lname{font-size:14px;} .lmark{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--subtle);} .unlock{font-size:13px;color:var(--muted);margin:10px 0 0;}
   .close{margin-top:34px;padding-top:26px;border-top:1px solid var(--border);}
@@ -69,7 +75,7 @@
 
   <div class="ladder">
     <div class="stage active"><div class="num">01</div><div class="nm">Completeness</div><div class="st">You are here</div><div class="cap">Free, from your file</div></div>
-    <div class="stage locked"><div class="num">02</div><div class="nm">Accuracy</div><div class="st">Locked</div><div class="cap">Run the plays yourself</div></div>
+    $stage_02
     <div class="stage locked"><div class="num">03</div><div class="nm">Custom</div><div class="st">Locked</div><div class="cap">Hand-built by Sculpted</div></div>
   </div>
 
@@ -81,12 +87,12 @@
 
   $estimate_block
 
-  <div class="punch">Both grades measure <b>completeness</b>. Neither can tell you if the data is <b>accurate</b>, nothing in a static file can. A book can be fully complete and mostly wrong, and complete-but-wrong is the dangerous kind, because it looks fine.</div>
+  <div class="punch">$punch</div>
 
-  <div class="sectlabel"><span>Accuracy: unlock stage 02</span><span class="tagl">locked</span></div>
-  <div class="locked">
+  <div class="sectlabel"><span>$accuracy_heading</span><span class="tagl">$accuracy_tag</span></div>
+  <div class="$accuracy_box_class">
     $accuracy_rows
-    <p class="unlock">Unlock with the cheap, tried-and-true Sculpted plays, shared with you to run yourself, or have Jacob run them for you.</p>
+    <p class="unlock">$accuracy_note</p>
   </div>
 
   <div class="sectlabel"><span>Custom: stage 03</span><span class="tagl">locked</span></div>
@@ -97,10 +103,10 @@
 
   <div class="close">
     <p class="nudge">$nudge</p>
-    <p class="closebody">You have your completeness grades. The accuracy grade is one step away, fastest via a free session where Jacob runs it on your real data with you.</p>
+    <p class="closebody">$close_body</p>
     <a class="btn" href="$booking_url">Book a free session with Jacob</a>
     <p class="alt">Prefer email? <a href="$mailto">Send Jacob your report card</a>.</p>
-    <p class="foot">Read-only. Your rows never left this machine. Made by Sculpted.</p>
+    <p class="foot">$footer_note</p>
   </div>
 
 </div></div>

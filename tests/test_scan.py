@@ -189,3 +189,28 @@ def test_metrics_carries_the_object_type():
              "last_activity": "2026-06-01"}]
     metrics = run_scan(recs, _cfg(), today=date(2026, 7, 22), fetcher=lambda d: (200, False))
     assert metrics["object_type"] == "company"
+
+
+def _one_company():
+    return [{"record_id": "0", "domain": "acme.com", "company_name": "Acme",
+             "email": "jane@acme.com", "company_size": "100",
+             "last_activity": "2026-06-01"}]
+
+
+def test_skip_liveness_omits_the_check_instead_of_fabricating_dead_domains():
+    """Skipping must mean "did not run", never "every domain is dead". An
+    offline fetcher reports 100% dead and folds a fabricated F into the grade
+    for a check that never happened."""
+    metrics = run_scan(_one_company(), _cfg(), today=date(2026, 7, 22),
+                       skip_liveness=True)
+    assert "liveness" not in metrics["facts"]
+
+
+def test_skip_liveness_does_not_drag_the_overall_grade_down():
+    graded = run_scan(_one_company(), _cfg(), today=date(2026, 7, 22),
+                      fetcher=lambda d: (200, False))
+    skipped = run_scan(_one_company(), _cfg(), today=date(2026, 7, 22),
+                       skip_liveness=True)
+    # Live domains grade A, so omitting the row must leave the average alone.
+    assert skipped["overall_grade"] == graded["overall_grade"]
+    assert skipped["overall_grade"] != "F"

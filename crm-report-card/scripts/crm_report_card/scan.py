@@ -17,7 +17,8 @@ from .grading import grade_rate, overall_grade
 _ANNUAL_ROT = 0.30
 
 
-def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> dict:
+def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None,
+             skip_liveness: bool = False) -> dict:
     dup = check_duplicates(records, object_type=cfg.object_type)
     fill = check_fill_rate(records, cfg.critical_properties)
     junk = check_junk(records)
@@ -54,10 +55,15 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
             contra["grade"] = grade_rate(contra["rate"])
             facts["contradictions"] = contra
             grades.append(contra["grade"])
-        live = check_liveness(records, fetcher=fetcher or default_fetcher)
-        live["grade"] = grade_rate(live["dead_rate"])
-        facts["liveness"] = live
-        grades.append(live["grade"])
+        # Skipping liveness means the check did not run, so it must not appear
+        # at all. Feeding it an offline fetcher would report every domain dead
+        # and fold a fabricated F into the grade, which is exactly the failure
+        # contradictions is omitted to avoid.
+        if not skip_liveness:
+            live = check_liveness(records, fetcher=fetcher or default_fetcher)
+            live["grade"] = grade_rate(live["dead_rate"])
+            facts["liveness"] = live
+            grades.append(live["grade"])
 
     n = len(records)
     return {
@@ -74,8 +80,10 @@ def run_scan(records: list[dict], cfg: RunConfig, today: date, fetcher=None) -> 
     }
 
 
-def scan_from_files(csv_path: str, cfg: RunConfig, today: date, fetcher=None) -> dict:
+def scan_from_files(csv_path: str, cfg: RunConfig, today: date, fetcher=None,
+                    skip_liveness: bool = False) -> dict:
     extra = [p for p in cfg.critical_properties if p not in CANONICAL_ROLES]
     records, _ = load_records(csv_path, cfg.field_mapping, extra_columns=extra,
                               object_type=cfg.object_type)
-    return run_scan(records, cfg, today=today, fetcher=fetcher)
+    return run_scan(records, cfg, today=today, fetcher=fetcher,
+                    skip_liveness=skip_liveness)

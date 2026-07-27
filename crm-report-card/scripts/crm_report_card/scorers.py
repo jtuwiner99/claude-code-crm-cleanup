@@ -48,6 +48,10 @@ def score_employee_count(rows: list[dict]) -> dict:
     skipped_blank = 0
     offending_ids: list[str] = []
     examples: list[dict] = []
+    # Which provider actually produced each comparable value. A waterfall play
+    # returns rows from more than one provider, so citing only the first one
+    # configured would misattribute most of the sample.
+    source_counts: dict[str, int] = {}
 
     for row in rows:
         rid = row.get("record_id", "")
@@ -66,6 +70,11 @@ def score_employee_count(rows: list[dict]) -> dict:
             continue
 
         checked += 1
+        # A blank source is not attributed to anyone: it is a comparable value
+        # with no citation, never a tally for the first provider in the list.
+        source = (row.get("source") or "").strip()
+        if source:
+            source_counts[source] = source_counts.get(source, 0) + 1
         if abs(band_index(stored) - band_index(verified)) >= 2:
             mismatched += 1
             offending_ids.append(rid)
@@ -83,6 +92,7 @@ def score_employee_count(rows: list[dict]) -> dict:
         "rate": (mismatched / checked) if checked else 0.0,
         "unverifiable": unverifiable,
         "skipped_blank": skipped_blank,
+        "source_counts": source_counts,
         "examples": examples,
         "offending_ids": offending_ids,
     }

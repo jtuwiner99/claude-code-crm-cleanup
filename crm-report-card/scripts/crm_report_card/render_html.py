@@ -7,6 +7,7 @@ from string import Template
 from urllib.parse import quote
 from .config import RunConfig
 from .grading import overall_grade
+from .unlock import accuracy_grade, is_measurable
 
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "scorecard-template.html")
 
@@ -60,6 +61,10 @@ _ACCURACY_REGISTRY = [
 
 _HUBSPOT_OBJECT_TYPE_IDS = {"company": "0-2", "contact": "0-1"}
 
+# Below this many comparable records the rate is still printed, but qualified:
+# 1 of 3 and 33 of 100 are not the same kind of number and must not read alike.
+_LOW_CONFIDENCE_MIN = 20
+
 
 def _pct(rate: float) -> str:
     return f"{rate * 100:.1f}%"
@@ -105,11 +110,13 @@ def _verdict(grade: str) -> str:
     }.get(grade, "Here is where your data stands.")
 
 
-def _nudge(grade: str) -> str:
+def _nudge(grade: str, unlocked: bool = False) -> str:
     if grade in ("D", "F"):
         return "A book at this grade is exactly what Jacob fixes with clients."
     if grade == "C":
         return "There is enough here to be worth a real cleanup."
+    if unlocked:
+        return "Want the rest of the accuracy picture? Here is the fast way."
     return "Want the accuracy grade too? Here is the fast way."
 
 
@@ -133,6 +140,14 @@ def build_mailto(cfg: RunConfig, objects: list[dict]) -> str:
             if key not in facts:
                 continue
             lines.append(f"- {label}: {_pct(facts[key][rate_key])} ({facts[key]['grade']})")
+        # The accuracy rows the user paid for belong in the summary they send.
+        # Only the measurable ones: a not-measurable row has no rate to quote.
+        for key, label, rate_key in _ACCURACY_REGISTRY:
+            fact = facts.get(key)
+            if not fact or not is_measurable(fact) or "grade" not in fact:
+                continue
+            lines.append(f"- {label}: {_pct(fact[rate_key])} ({fact['grade']}), "
+                         f"verified on {fact['checked']} of {fact['sample_size']} sampled")
         ai = metrics.get("ai_baseline")
         if ai:
             lines.append(f"- Qualified (ESTIMATE, unverified): ~{ai['qualified_estimate'] * 100:.0f}%")
@@ -164,20 +179,58 @@ def _locked_list_html(rows: list[str]) -> str:
     )
 
 
+def _sample_disclosure(fact: dict) -> str:
+    """The sample is not filtered against the free scan's own flags: filtering
+    would bias it the other way. Say so instead of hiding it."""
+    return ("The sample is drawn at random from all graded records, including "
+            "records other checks on this card already flagged.")
+
+
 def _provenance_html(fact: dict) -> str:
     """Accuracy rows cannot be re-run from the CSV, so they earn trust by being
     fully cited instead."""
+    provider = (fact.get("provider") or "").strip()
+    via = f" via {provider}" if provider else ""
+    skipped = fact.get("skipped_blank", 0)
+    counts = (f'{fact["checked"]} comparable, {fact["unverifiable"]} unverifiable '
+              '(the provider had no data, which is not counted as an error), '
+              f'{skipped} skipped because the stored value was blank.')
+
+    if not is_measurable(fact):
+        return (
+            f'<p class="prov">A random sample of {fact["sample_size"]} records was '
+            f'sent{via} on {fact["run_at"]}, and nothing came back that could be '
+            f'compared, so this row is not graded. {counts} '
+            f'{_sample_disclosure(fact)}</p>'
+        )
+
+    low = ""
+    if fact["checked"] < _LOW_CONFIDENCE_MIN:
+        low = (f' Only {fact["checked"]} records could actually be compared, so read '
+               'this as a rough signal, not a precise measurement.')
     return (
         '<p class="prov">Verified on a random sample of '
-        f'{fact["sample_size"]} records via {fact["provider"]} on {fact["run_at"]}. '
-        f'{fact["checked"]} comparable, {fact["unverifiable"]} unverifiable '
-        '(the provider had no data, which is not counted as an error).</p>'
+        f'{fact["sample_size"]} records{via} on {fact["run_at"]}. '
+        f'{counts} {_sample_disclosure(fact)}{low}</p>'
+    )
+
+
+def _not_measurable_html(label: str, explainer: str) -> str:
+    """A row that measured nothing gets no letter grade, no percentage, and no
+    bar. The provenance underneath says why. See unlock.is_measurable."""
+    return (
+        '<div class="sig nm">\n'
+        '  <div class="sigtop"><span class="signame">'
+        f'<span class="tag">NOT MEASURED</span>{label}</span>'
+        '<span class="nmval">Not measurable</span></div>\n'
+        f'  <p class="sigexp">{explainer}</p></div>'
     )
 
 
 def _accuracy_html(cfg: RunConfig, objects: list[dict]) -> str:
-    """One row per accuracy signal: a graded signal where a play has been run,
-    a LOCKED row everywhere else."""
+    """One row per accuracy signal: a graded signal where a play has been run
+    and measured something, a NOT MEASURED row where it measured nothing, and a
+    LOCKED row everywhere else."""
     out = []
     for key, label, rate_key in _ACCURACY_REGISTRY:
         # First object carrying this key wins; any other is silently dropped.
@@ -194,8 +247,15 @@ def _accuracy_html(cfg: RunConfig, objects: list[dict]) -> str:
             )
             continue
         fact = holder["metrics"]["facts"][key]
+        # The comparison rule belongs to the play, not to the renderer: without
+        # it on the card, "32% of your employee counts are wrong" is a number
+        # nobody can check. A second play will have a different rule.
+        rule = fact.get("comparison_rule", "")
+        if not is_measurable(fact):
+            out.append(_not_measurable_html(label, rule) + _provenance_html(fact))
+            continue
         sig = _sig_html(cfg, holder["object_type"], key, label, rate_key, fact,
-                        holder.get("list_files") or {})
+                        holder.get("list_files") or {}, explainer=rule)
         out.append(sig + _provenance_html(fact))
     return "\n".join(out)
 
@@ -217,12 +277,15 @@ def _example_row_html(cfg: RunConfig, object_type: str, ex: dict) -> str:
 
 
 def _sig_html(cfg: RunConfig, object_type: str, key: str, label: str, rate_key: str, fact: dict,
-              list_files: dict) -> str:
+              list_files: dict, explainer: str | None = None) -> str:
     grade = fact["grade"]
     rate = fact[rate_key]
     fcls = " f" if grade == "F" else ""
     width = min(rate * 100, 100)
-    explainer = _explainer(key, object_type)
+    # Accuracy rows pass their own explainer (the play's comparison rule);
+    # completeness rows look theirs up in _EXPLAINERS.
+    if explainer is None:
+        explainer = _explainer(key, object_type)
     extra = f" &middot; bot-blocked: {fact['bot_blocked']}" if key == "liveness" and "bot_blocked" in fact else ""
 
     examples = fact.get("examples") or []
@@ -248,6 +311,17 @@ def _sig_html(cfg: RunConfig, object_type: str, key: str, label: str, rate_key: 
     )
 
 
+def _has_accuracy_fact(objects: list[dict]) -> bool:
+    """True once any accuracy play has been merged in, measurable or not.
+
+    Both flavours mean company domains were sent to a third-party provider, so
+    both invalidate the "nothing left this machine" claim.
+    """
+    keys = {key for key, _label, _rate_key in _ACCURACY_REGISTRY}
+    return any(key in obj["metrics"].get("facts", {})
+               for obj in objects for key in keys)
+
+
 def _scope_line(objects: list[dict]) -> str:
     parts = []
     for obj in objects:
@@ -256,6 +330,13 @@ def _scope_line(objects: list[dict]) -> str:
         parts.append(f"<b>{n:,} {label}</b>")
     tail = ("Click any line item to see the actual records and verify them in your CRM. "
             "Nothing left this machine.")
+    if _has_accuracy_fact(objects):
+        # The free scan's promise is true and stays untouched. Once a paid
+        # accuracy play has run it is not true any more, so it must not be said.
+        tail = ("Click any line item to see the actual records and verify them in "
+                "your CRM. Everything stayed on this machine except the company "
+                "domains in the verified sample, which were sent to the providers "
+                "named in the accuracy rows below, through your own Deepline account.")
     if len(parts) == 2:
         return f"Analyzed both objects: {parts[0]} and {parts[1]}. {tail}"
     if len(parts) > 2:
@@ -297,15 +378,72 @@ def _segment_html(obj: dict, cfg: RunConfig) -> str:
     badge_cls = " ok" if grade in ("A", "B") else ""
     verdict = _verdict(grade)
 
+    # Completeness and accuracy side by side, as the design spec asks. The
+    # accuracy column appears only when a measurable accuracy fact exists;
+    # a not-measurable one produces no grade (see unlock.accuracy_grade).
+    badges = (f'<div class="gradecol"><div class="gradebadge{badge_cls}">{grade}</div>'
+              '<div class="gradelbl">Completeness</div></div>')
+    acc = accuracy_grade(metrics)
+    if acc:
+        acc_cls = " ok" if acc in ("A", "B") else ""
+        badges += (f'<div class="gradecol"><div class="gradebadge{acc_cls}">{acc}</div>'
+                   '<div class="gradelbl">Accuracy</div></div>')
+
     return (
         f'<div class="seg">\n'
         f'  <div class="seghead"><div><h2>{title}</h2>'
         f'<div class="cnt">{n:,} records &middot; completeness grade &middot; {verdict}</div></div>'
-        f'<div class="gradebadge{badge_cls}">{grade}</div></div>\n'
+        f'<div class="grades">{badges}</div></div>\n'
         f'  <div class="tiles">{tiles_html}</div>\n'
         f'  {sig_html}\n'
         f'</div>'
     )
+
+
+# Every piece of standing copy that is true before any play has run and false
+# after one has. Keyed by whether an accuracy fact is present.
+_LOCKED_COPY = {
+    "stage_02": ('<div class="stage locked"><div class="num">02</div>'
+                 '<div class="nm">Accuracy</div><div class="st">Locked</div>'
+                 '<div class="cap">Run the plays yourself</div></div>'),
+    "punch": ("Both grades measure <b>completeness</b>. Neither can tell you if the "
+              "data is <b>accurate</b>, nothing in a static file can. A book can be "
+              "fully complete and mostly wrong, and complete-but-wrong is the "
+              "dangerous kind, because it looks fine."),
+    "accuracy_heading": "Accuracy: unlock stage 02",
+    "accuracy_tag": "locked",
+    "accuracy_box_class": "locked",
+    "accuracy_note": ("Unlock with the cheap, tried-and-true Sculpted plays, shared "
+                      "with you to run yourself, or have Jacob run them for you."),
+    "close_body": ("You have your completeness grades. The accuracy grade is one step "
+                   "away, fastest via a free session where Jacob runs it on your real "
+                   "data with you."),
+    "footer_note": "Read-only. Your rows never left this machine. Made by Sculpted.",
+}
+
+_UNLOCKED_COPY = {
+    "stage_02": ('<div class="stage active"><div class="num">02</div>'
+                 '<div class="nm">Accuracy</div><div class="st">Unlocked</div>'
+                 '<div class="cap">Verified on a sample</div></div>'),
+    "punch": ("The grades above measure <b>completeness</b>. No static file can grade "
+              "<b>accuracy</b>, so the accuracy rows below were measured a different "
+              "way: a random sample of your records checked against live sources. A "
+              "book can be fully complete and mostly wrong, and complete-but-wrong is "
+              "the dangerous kind, because it looks fine."),
+    "accuracy_heading": "Accuracy: stage 02",
+    "accuracy_tag": "partly unlocked",
+    "accuracy_box_class": "unlockedbox",
+    "accuracy_note": ("The rows still marked LOCKED unlock the same way: cheap, "
+                      "tried-and-true Sculpted plays, shared with you to run "
+                      "yourself, or have Jacob run them for you."),
+    "close_body": ("You have your completeness grades, and an accuracy grade measured "
+                   "on a sample. Getting that same rigour across your whole book is "
+                   "the work itself, fastest via a free session where Jacob runs it on "
+                   "your real data with you."),
+    "footer_note": ("Read-only. The only thing that left this machine was the company "
+                    "domains in the verified sample, sent to the providers named above "
+                    "through your own Deepline account. Made by Sculpted."),
+}
 
 
 def render_report(objects: list[dict], cfg: RunConfig, template: str | None = None) -> str:
@@ -323,6 +461,9 @@ def render_report(objects: list[dict], cfg: RunConfig, template: str | None = No
     ai_obj = next((obj for obj in objects if obj["metrics"].get("ai_baseline")), None)
     estimate_block = _estimate_html(ai_obj["metrics"] if ai_obj else {"ai_baseline": None})
 
+    unlocked = _has_accuracy_fact(objects)
+    copy = _UNLOCKED_COPY if unlocked else _LOCKED_COPY
+
     return Template(template).substitute(
         product_name=cfg.product_name,
         overall_grade=grade,
@@ -332,9 +473,10 @@ def render_report(objects: list[dict], cfg: RunConfig, template: str | None = No
         estimate_block=estimate_block,
         accuracy_rows=_accuracy_html(cfg, objects),
         custom_rows=_locked_list_html(custom_rows(cfg)),
-        nudge=_nudge(grade),
+        nudge=_nudge(grade, unlocked=unlocked),
         mailto=build_mailto(cfg, objects),
         booking_url=cfg.booking_url,
+        **copy,
     )
 
 

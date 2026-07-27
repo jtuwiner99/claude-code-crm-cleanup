@@ -34,3 +34,20 @@ def test_scan_then_render(tmp_path, capsys):
     assert rc2 == 0
     html = open(html_path).read()
     assert "Book a free session" in html
+
+
+def test_skip_liveness_env_var_omits_the_dead_domain_row(tmp_path, monkeypatch, capsys):
+    """CRM_RC_SKIP_LIVENESS is the only way to run the free scan with zero
+    network. It must not invent a 100% dead-domain F to get there."""
+    monkeypatch.setenv("CRM_RC_SKIP_LIVENESS", "1")
+    cfg = _cfg_file(tmp_path)
+    csv = _csv_file(tmp_path)
+    metrics_path = str(tmp_path / "metrics.json")
+
+    rc = main(["scan", "--config", cfg, "--csv", csv, "--out", metrics_path])
+    assert rc == 0
+    metrics = json.loads(open(metrics_path).read())
+    assert "liveness" not in metrics["facts"]
+
+    out = capsys.readouterr().out
+    assert "Dead domains" not in out

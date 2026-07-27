@@ -76,6 +76,81 @@ def test_fragment_scores_play_rows(tmp_path):
     assert frag["offending_ids"] == ["0"]
 
 
+def test_fragment_carries_the_plays_comparison_rule(tmp_path):
+    """The rule is what makes the rate falsifiable, and it belongs to the play,
+    so it has to travel with the fragment instead of being retyped downstream."""
+    p = _setup(tmp_path)
+    (p / "rows.csv").write_text(
+        "record_id,domain,stored_employee_count,verified_employee_count,source\n"
+        "0,acme.com,10,900,peopledatalabs\n"
+    )
+    rc = main(["fragment", "--registry", str(p / "registry.json"),
+               "--play", "employee-count-accuracy", "--rows", str(p / "rows.csv"),
+               "--out", str(p / "frag.json")])
+    assert rc == 0
+    frag = json.loads((p / "frag.json").read_text())
+    assert frag["comparison_rule"] == REGISTRY["plays"][0]["comparison_rule"]
+
+
+def test_fragment_cites_the_providers_that_actually_answered(tmp_path):
+    """The play is a waterfall. Citing providers[0] for a sample mostly answered
+    by the fallback is the wrong citation, so counts come from the rows."""
+    p = _setup(tmp_path)
+    (p / "rows.csv").write_text(
+        "record_id,domain,stored_employee_count,verified_employee_count,source\n"
+        "0,acme.com,10,900,peopledatalabs\n"
+        "1,globex.io,4000,4200,exa\n"
+        "2,initech.com,12,15,exa\n"
+        "3,umbrella.com,40,,\n"
+    )
+    rc = main(["fragment", "--registry", str(p / "registry.json"),
+               "--play", "employee-count-accuracy", "--rows", str(p / "rows.csv"),
+               "--out", str(p / "frag.json")])
+    assert rc == 0
+    frag = json.loads((p / "frag.json").read_text())
+    assert frag["provider"] == "exa (2), peopledatalabs (1)"
+    # The sourceless row is unverifiable, not a tally for anyone.
+    assert frag["unverifiable"] == 1
+    assert frag["source_counts"] == {"peopledatalabs": 1, "exa": 2}
+
+
+def test_an_explicit_provider_flag_still_overrides_the_derived_citation(tmp_path):
+    p = _setup(tmp_path)
+    (p / "rows.csv").write_text(
+        "record_id,domain,stored_employee_count,verified_employee_count,source\n"
+        "0,acme.com,10,900,exa\n"
+    )
+    rc = main(["fragment", "--registry", str(p / "registry.json"),
+               "--play", "employee-count-accuracy", "--rows", str(p / "rows.csv"),
+               "--out", str(p / "frag.json"), "--provider", "hand-checked"])
+    assert rc == 0
+    assert json.loads((p / "frag.json").read_text())["provider"] == "hand-checked"
+
+
+def test_unlocking_a_run_that_compared_nothing_prints_no_grade(tmp_path, capsys):
+    """The reported symptom: `unlocked employee_count_accuracy: 0.0% (A)` on a
+    run where the provider returned nothing at all."""
+    p = _setup(tmp_path)
+    (p / "metrics.json").write_text(json.dumps({
+        "object_type": "company", "counts": {"records": 3},
+        "facts": {}, "overall_grade": "D"}))
+    (p / "frag.json").write_text(json.dumps({
+        "unlock": "employee_count_accuracy", "object_type": "company",
+        "sample_size": 3, "checked": 0, "mismatched": 0, "rate": 0.0,
+        "unverifiable": 3, "skipped_blank": 0, "examples": [], "offending_ids": [],
+        "provider": "peopledatalabs_enrich_company", "run_at": "2026-07-27",
+        "comparison_rule": "mismatch = two or more size bands apart"}))
+    rc = main(["unlock", "--metrics", str(p / "metrics.json"),
+               "--fragment", str(p / "frag.json"), "--out", str(p / "metrics.json")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "(A)" not in out
+    assert "0.0%" not in out
+    assert "not measurable" in out
+    metrics = json.loads((p / "metrics.json").read_text())
+    assert "grade" not in metrics["facts"]["employee_count_accuracy"]
+
+
 def test_unlock_merges_into_metrics(tmp_path):
     p = _setup(tmp_path)
     (p / "metrics.json").write_text(json.dumps({
@@ -85,7 +160,8 @@ def test_unlock_merges_into_metrics(tmp_path):
         "unlock": "employee_count_accuracy", "object_type": "company",
         "sample_size": 2, "checked": 2, "mismatched": 1, "rate": 0.5,
         "unverifiable": 0, "skipped_blank": 0, "examples": [], "offending_ids": ["0"],
-        "provider": "peopledatalabs_enrich_company", "run_at": "2026-07-27"}))
+        "provider": "peopledatalabs (2)", "run_at": "2026-07-27",
+        "comparison_rule": "mismatch = two or more size bands apart"}))
     rc = main(["unlock", "--metrics", str(p / "metrics.json"),
                "--fragment", str(p / "frag.json"), "--out", str(p / "metrics.json")])
     assert rc == 0
@@ -138,7 +214,8 @@ def test_unlock_reports_a_missing_metrics_file_without_a_traceback(tmp_path, cap
         "unlock": "employee_count_accuracy", "object_type": "company",
         "sample_size": 2, "checked": 2, "mismatched": 1, "rate": 0.5,
         "unverifiable": 0, "skipped_blank": 0, "examples": [], "offending_ids": ["0"],
-        "provider": "peopledatalabs_enrich_company", "run_at": "2026-07-27"}))
+        "provider": "peopledatalabs (2)", "run_at": "2026-07-27",
+        "comparison_rule": "mismatch = two or more size bands apart"}))
     rc = main(["unlock", "--metrics", str(missing),
                "--fragment", str(p / "frag.json"), "--out", str(p / "out.json")])
     assert rc == 2
