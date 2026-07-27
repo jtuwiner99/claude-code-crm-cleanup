@@ -78,3 +78,40 @@ def blocked_plays(entries: list[dict], object_type: str,
         if missing:
             out.append((entry, missing))
     return out
+
+
+import random
+
+# Deepline bills in credits. Verified 2026-07-27 against `deepline billing
+# balance --json`: balance 668 credits reported as rough_usd_balance 66.8.
+CREDIT_USD = 0.10
+
+
+def eligible_records(records: list[dict], play: dict) -> list[dict]:
+    """Records this play can actually check: every required role is filled.
+
+    A blank stored value is a COMPLETENESS defect, already graded by the free
+    scan's fill-rate check. Including it here would let a missing value show up
+    a second time as an accuracy failure.
+    """
+    roles = play.get("requires_roles", [])
+    return [rec for rec in records
+            if all((rec.get(role) or "").strip() for role in roles)]
+
+
+def draw_sample(records: list[dict], size: int, seed: int) -> list[dict]:
+    """A reproducible random sample. Never the flagged subset.
+
+    Sampling records the free scan already flagged would inflate the accuracy
+    failure rate and make the book look worse than it is.
+    """
+    pool = list(records)
+    if size >= len(pool):
+        return pool
+    rng = random.Random(seed)
+    return rng.sample(pool, size)
+
+
+def estimate_cost(play: dict, n: int) -> dict:
+    usd = float(play.get("cost_per_record_usd", 0.0)) * n
+    return {"records": n, "usd": round(usd, 2), "credits": round(usd / CREDIT_USD, 1)}

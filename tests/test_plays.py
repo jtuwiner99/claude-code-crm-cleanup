@@ -73,3 +73,56 @@ def test_load_registry_reads_the_plays_key(tmp_path):
     path = tmp_path / "registry.json"
     path.write_text(json.dumps({"plays": [_entry()]}))
     assert [p["id"] for p in load_registry(str(path))] == ["employee-count-accuracy"]
+
+
+from crm_report_card.plays import eligible_records, draw_sample, estimate_cost, CREDIT_USD
+
+
+def _recs(n):
+    return [{"record_id": str(i), "domain": f"co{i}.com", "company_size": "100"}
+            for i in range(n)]
+
+
+def test_eligible_records_need_every_required_role_filled():
+    recs = [
+        {"record_id": "0", "domain": "a.com", "company_size": "100"},
+        {"record_id": "1", "domain": "", "company_size": "100"},
+        {"record_id": "2", "domain": "c.com", "company_size": ""},
+    ]
+    out = eligible_records(recs, _entry())
+    assert [r["record_id"] for r in out] == ["0"]
+
+
+def test_sample_is_deterministic_for_a_seed():
+    recs = _recs(50)
+    a = draw_sample(recs, 10, seed=7)
+    b = draw_sample(recs, 10, seed=7)
+    assert [r["record_id"] for r in a] == [r["record_id"] for r in b]
+    assert len(a) == 10
+
+
+def test_a_different_seed_draws_a_different_sample():
+    recs = _recs(50)
+    a = draw_sample(recs, 10, seed=7)
+    b = draw_sample(recs, 10, seed=8)
+    assert [r["record_id"] for r in a] != [r["record_id"] for r in b]
+
+
+def test_sample_larger_than_population_returns_everything():
+    recs = _recs(5)
+    assert len(draw_sample(recs, 100, seed=1)) == 5
+
+
+def test_sample_does_not_mutate_the_input_order():
+    recs = _recs(20)
+    before = [r["record_id"] for r in recs]
+    draw_sample(recs, 5, seed=3)
+    assert [r["record_id"] for r in recs] == before
+
+
+def test_cost_estimate_in_dollars_and_credits():
+    est = estimate_cost(_entry(cost_per_record_usd=0.14), 100)
+    assert est["records"] == 100
+    assert est["usd"] == pytest.approx(14.0)
+    assert est["credits"] == pytest.approx(140.0)
+    assert CREDIT_USD == 0.10
