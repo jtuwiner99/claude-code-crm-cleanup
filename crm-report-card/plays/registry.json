@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "plays": [
+    {
+      "id": "employee-count-accuracy",
+      "unlocks": "employee_count_accuracy",
+      "object_type": "company",
+      "label": "Employee-count accuracy, verified vs stored",
+      "requires_roles": ["domain", "company_size"],
+      "providers": ["peopledatalabs_enrich_company", "exa_answer"],
+      "cost_per_record_usd": 0.14,
+      "default_sample": 100,
+      "comparison_rule": "mismatch = stored and verified fall two or more size bands apart"
+    }
+  ]
+}
