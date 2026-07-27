@@ -73,6 +73,32 @@ def test_examples_are_capped_at_twelve():
     assert len(out["offending_ids"]) == 30
 
 
+def test_example_detail_carries_self_reported_range_and_identity_method():
+    """The evidence line must show the self-reported band next to the
+    associated-member count, and how identity was confirmed, so a reader who
+    sees 'stored 500, verified 16848' also sees 'self-reported 5001-10000'."""
+    rows = [{"record_id": "0", "stored_employee_count": "500",
+             "verified_employee_count": "16848", "source": "harvestapi via apify",
+             "verified_range": "5001-10000", "identity_method": "website-match"}]
+    out = score_employee_count(rows)
+    detail = out["examples"][0]["detail"]
+    assert "500" in detail
+    assert "16848" in detail
+    assert "self-reported 5001-10000" in detail
+    assert "website-match" in detail
+
+
+def test_example_detail_handles_missing_range_and_identity_method():
+    """A mismatch can still be scored even when the range/method columns are
+    blank; the detail line should say so rather than rendering garbage."""
+    rows = [{"record_id": "0", "stored_employee_count": "10",
+             "verified_employee_count": "900", "source": "harvestapi via apify"}]
+    out = score_employee_count(rows)
+    detail = out["examples"][0]["detail"]
+    assert "no self-reported range" in detail
+    assert "unknown identity method" in detail
+
+
 def test_scorer_is_registered_under_its_unlock_key():
     assert SCORERS["employee_count_accuracy"] is score_employee_count
 

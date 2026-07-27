@@ -79,11 +79,15 @@ def score_employee_count(rows: list[dict]) -> dict:
             mismatched += 1
             offending_ids.append(rid)
             if len(examples) < _MAX_EXAMPLES:
+                verified_range = (row.get("verified_range") or "").strip()
+                identity_method = (row.get("identity_method") or "").strip()
+                range_part = f"self-reported {verified_range}" if verified_range else "no self-reported range"
+                method_part = identity_method or "unknown identity method"
                 examples.append({
                     "record_id": rid,
                     "label": (row.get("domain") or row.get("company_name") or rid),
                     "detail": (f"stored {stored}, verified {verified} "
-                               f"({row.get('source') or 'unknown source'})"),
+                               f"({range_part}, {method_part})"),
                 })
 
     return {
