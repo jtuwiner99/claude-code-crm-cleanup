@@ -50,8 +50,9 @@ For the full walkthrough, including the AI-baseline step
 
 - stdlib Python only. No third-party dependencies, no API keys.
 - The only network calls are optional domain-liveness HEAD pings against
-  domains already present in your own CSV; set `CRM_RC_SKIP_LIVENESS=1` to
-  skip them and run fully offline.
+  domains already present in your own CSV. Set `CRM_RC_SKIP_LIVENESS=1` to run
+  with no network at all: the dead-domain row is then skipped entirely, and it
+  neither appears on the card nor counts toward the grade.
 - Your CSV is read, processed, and written back to local files
   (`metrics.json`, `crm-report-card.html`) on the machine you run it on. It is
   never uploaded anywhere by this tool.

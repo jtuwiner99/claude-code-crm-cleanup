@@ -68,9 +68,10 @@ is more useful than hiding it.
 
 Then ask, plainly:
 
-> "Want me to check <N> records for about $<X>? That's <Y> Deepline credits on
-> your account. It's a sample, not your whole book, which is all we need for a
-> grade."
+> "Want me to check <N> records for at most $<X>? That's <Y> Deepline credits
+> on your account, and it is a ceiling, not a quote: PeopleDataLabs bills only
+> when it finds a match, so misses cost nothing and the real number is usually
+> lower. It's a sample, not your whole book, which is all we need for a grade."
 
 **Wait for a yes. Do not proceed on an implied go.**
 
@@ -144,6 +145,19 @@ precise about three things:
   had no data for. It is reported next to the rate and excluded from it.
 - **This is a sample.** The rate is an estimate of the whole book, measured on
   <N> records, not a census.
+
+If nothing came back that could be compared, the row renders as **Not
+measurable** with no grade and no percentage, and `unlock` prints
+`not measurable` instead of a rate. That is the correct outcome, not a bug to
+work around. Tell them plainly what happened: they paid for a run, the run
+completed, and the provider had no usable value for the records drawn, so there
+is nothing to grade. Never re-render it as a 0% A. Offer to re-draw a different
+sample or point the play at a different column if the stored values were blank.
+
+Note that once any accuracy row is present, the card's privacy line changes on
+its own: it stops saying nothing left the machine, and says instead that the
+company domains in the sample went to the named providers through their own
+Deepline account. That is deliberate. Do not talk around it.
 
 The completeness grade does not change. Accuracy is its own grade, because they
 are different questions.

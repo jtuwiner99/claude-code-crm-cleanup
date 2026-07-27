@@ -48,11 +48,16 @@ Then give a quick tour of what they downloaded, so they can trust it:
 - `scripts/crm_report_card/`: the engine. Standard-library Python, no
   dependencies. `checks/` holds the six checks, `scan.py` runs them, the
   `render_*` files draw the report card.
-- `tests/` and `eval/`: the proof. They can run `python3 -m pytest -q`
-  themselves and watch the numbers verify. The trustworthy parts are
-  trustworthy because you can check them.
-- `fixtures/`: a fake messy CRM, so they can try the whole thing with zero real
-  data first.
+- `properties.yaml`: the default property catalogue the field mapper maps to,
+  so they can see exactly which columns get recognized.
+- `assets/`: the report-card template and the ICP-scoring prompt.
+
+Be accurate about the proof, because the test suite is not in this download:
+it lives in the public repository this skill is published from, alongside a
+fake messy-CRM fixture. Anyone who wants to check the numbers can clone that
+repository and run `python3 -m pytest -q` against the same code they have here.
+The standalone bundle also ships that fixture under `fixtures/`, so they can
+try the whole flow with zero real data first.
 
 **Then, before the intake, make the offer (do this warmly, once):**
 
@@ -327,7 +332,7 @@ Then ask for the go: "Want me to run it?" Only run once they say yes.
 Run the scan for each object they chose, as a module from the repo root:
 
 ```bash
-PYTHONPATH=scripts python3 -m crm_report_card.cli scan \
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/scripts" python3 -m crm_report_card.cli scan \
   --config run-config-company.json --csv <their-companies-export.csv> \
   --out company-metrics.json
 ```
@@ -336,7 +341,11 @@ Repeat with `run-config-contact.json`, their contacts export, and
 `contact-metrics.json` if they are grading contacts too. Each writes a metrics
 file with per-check rates, grades, the cited example records, an overall grade,
 and an empty `ai_baseline`. Domain-liveness (companies only) makes one HTTPS HEAD
-request per unique domain; set `CRM_RC_SKIP_LIVENESS=1` for a fully offline run.
+request per unique domain, and it is the scan's only network call. Setting
+`CRM_RC_SKIP_LIVENESS=1` runs with no network at all, and the dead-domain row is
+then **skipped**: it does not appear on the card and it does not enter the grade.
+Say that plainly rather than implying the check ran offline, because a check that
+did not run must never be reported as a result.
 
 **While it runs, plant the next step** (the accuracy plays), lightly: "While that
 runs, the sharper numbers, verified headcount, who has moved on, which emails
@@ -351,7 +360,7 @@ CSV (20 to 50 rows), follow `assets/icp-scorer-prompt.md` to derive
 `{qualified_estimate, reasons, sample_size}`, and patch it in:
 
 ```bash
-PYTHONPATH=scripts python3 - <<'PY'
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/scripts" python3 - <<'PY'
 import json
 from crm_report_card.ai_baseline import merge_ai_baseline
 f = "company-metrics.json"   # then repeat for contact-metrics.json
@@ -374,7 +383,7 @@ Render into a single folder in their Downloads so the card and its downloadable
 list files sit together (the "Download all" links are relative):
 
 ```bash
-PYTHONPATH=scripts python3 -m crm_report_card.cli report \
+PYTHONPATH="${CLAUDE_PLUGIN_ROOT}/scripts" python3 -m crm_report_card.cli report \
   --config run-config-company.json \
   --out ~/Downloads/crm-report-card/crm-report-card.html \
   --lists-dir ~/Downloads/crm-report-card \

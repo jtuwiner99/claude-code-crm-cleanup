@@ -141,7 +141,7 @@ def _cmd_plays(args) -> int:
     for play in eligible:
         est = play["estimate"]
         print(f"{play['id']}: {play['sample']} of {play['eligible_records']} records, "
-              f"about ${est['usd']:.2f} ({est['credits']:.1f} credits)")
+              f"at most ${est['usd']:.2f} ({est['credits']:.1f} credits)")
     for play in blocked:
         print(f"{play['id']}: cannot run, missing {', '.join(play['missing_roles'])}")
     return 0

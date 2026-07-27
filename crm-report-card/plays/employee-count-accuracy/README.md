@@ -14,8 +14,9 @@ completeness problem the free scan already grades.
 then Exa for anything PeopleDataLabs misses. Both are Deepline-native and
 billed to your own Deepline account with credits. There is no key to set up.
 
-**What it costs:** about $0.14 per matched record, so roughly $14 for the default
-100-record sample. A miss costs nothing.
+**What it costs:** at most $0.14 per matched record, so at most $14 for the
+default 100-record sample. That figure is a ceiling: PeopleDataLabs bills only
+on a match, so every miss costs nothing and a real run usually lands under it.
 
 **What "wrong" means:** stored and verified fall two or more size bands apart.
 Off by a little is not counted as an error. Bands are 1-10, 11-50, 51-200,
