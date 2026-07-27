@@ -24,6 +24,8 @@ SIZE_BANDS = (
 
 
 def band_index(value: int) -> int:
+    if value <= 0:
+        return -1
     for i, (low, high, _label) in enumerate(SIZE_BANDS):
         if low <= value <= high:
             return i
@@ -33,7 +35,7 @@ def band_index(value: int) -> int:
 def _to_int(text):
     try:
         val = int(float(str(text).replace(",", "").strip()))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return None
     return val if val > 0 else None
 
