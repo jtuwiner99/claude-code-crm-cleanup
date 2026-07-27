@@ -49,6 +49,15 @@ _ACCURACY_ROWS = [
     "Still-employed accuracy, real not timestamp",
 ]
 
+# The accuracy axis (stage 02), in card order: unlock key, label, rate key.
+# The keys must stay in step with unlock.ACCURACY_UNLOCKS; a test asserts it.
+# `_ACCURACY_ROWS` stays as the label list so `accuracy_rows()` is unchanged.
+_ACCURACY_REGISTRY = [
+    ("employee_count_accuracy", "Employee-count accuracy, verified vs stored", "rate"),
+    ("email_deliverability", "Email deliverability, not just format", "rate"),
+    ("still_employed", "Still-employed accuracy, real not timestamp", "rate"),
+]
+
 _HUBSPOT_OBJECT_TYPE_IDS = {"company": "0-2", "contact": "0-1"}
 
 
@@ -153,6 +162,39 @@ def _locked_list_html(rows: list[str]) -> str:
         f'<div class="lrow"><span class="lname">{r}</span><span class="lmark">LOCKED</span></div>'
         for r in rows
     )
+
+
+def _provenance_html(fact: dict) -> str:
+    """Accuracy rows cannot be re-run from the CSV, so they earn trust by being
+    fully cited instead."""
+    return (
+        '<p class="prov">Verified on a random sample of '
+        f'{fact["sample_size"]} records via {fact["provider"]} on {fact["run_at"]}. '
+        f'{fact["checked"]} comparable, {fact["unverifiable"]} unverifiable '
+        '(the provider had no data, which is not counted as an error).</p>'
+    )
+
+
+def _accuracy_html(cfg: RunConfig, objects: list[dict]) -> str:
+    """One row per accuracy signal: a graded signal where a play has been run,
+    a LOCKED row everywhere else."""
+    out = []
+    for key, label, rate_key in _ACCURACY_REGISTRY:
+        holder = next(
+            (obj for obj in objects if key in obj["metrics"].get("facts", {})),
+            None,
+        )
+        if holder is None:
+            out.append(
+                f'<div class="lrow"><span class="lname">{label}</span>'
+                '<span class="lmark">LOCKED</span></div>'
+            )
+            continue
+        fact = holder["metrics"]["facts"][key]
+        sig = _sig_html(cfg, holder["object_type"], key, label, rate_key, fact,
+                        holder.get("list_files") or {})
+        out.append(sig + _provenance_html(fact))
+    return "\n".join(out)
 
 
 def _example_row_html(cfg: RunConfig, object_type: str, ex: dict) -> str:
@@ -285,7 +327,7 @@ def render_report(objects: list[dict], cfg: RunConfig, template: str | None = No
         scope_line=_scope_line(objects),
         segments=segments,
         estimate_block=estimate_block,
-        accuracy_rows=_locked_list_html(accuracy_rows()),
+        accuracy_rows=_accuracy_html(cfg, objects),
         custom_rows=_locked_list_html(custom_rows(cfg)),
         nudge=_nudge(grade),
         mailto=build_mailto(cfg, objects),
