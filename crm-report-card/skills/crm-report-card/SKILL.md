@@ -424,6 +424,11 @@ with a Companies and a Contacts segment. Explain plainly:
   session with Jacob, where he does exactly this with you." Say it once, without
   pressure, and move on.
 
+  If they want one of the accuracy rows unlocked now, that is the
+  `crm-accuracy-plays` skill: it runs a small verification play on a random
+  sample using their own Deepline account, at their cost, and turns that row
+  into a graded one. Mention it once, with the rough price, and let them choose.
+
 ## 8. Where to go from here
 
 Close by handing them the finished card and offering the next step, warmly:
