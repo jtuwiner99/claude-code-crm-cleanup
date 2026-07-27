@@ -180,6 +180,9 @@ def _accuracy_html(cfg: RunConfig, objects: list[dict]) -> str:
     a LOCKED row everywhere else."""
     out = []
     for key, label, rate_key in _ACCURACY_REGISTRY:
+        # First object carrying this key wins; any other is silently dropped.
+        # Deliberate: each unlock key is semantically scoped to one object
+        # type today, so at most one object should ever carry it.
         holder = next(
             (obj for obj in objects if key in obj["metrics"].get("facts", {})),
             None,

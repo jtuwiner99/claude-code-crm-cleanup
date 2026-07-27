@@ -45,7 +45,9 @@ def test_an_unlocked_row_carries_its_provenance():
     assert "peopledatalabs_enrich_company" in html
     assert "2026-07-27" in html
     assert "100" in html          # sample size
-    assert "8" in html            # unverifiable count
+    assert "8 unverifiable" in html  # unverifiable count (not just "8", which
+                                      # also occurs inside the "&#8599;" verify
+                                      # link entity and would pass vacuously)
 
 
 def test_an_unlocked_row_keeps_the_verify_deep_link():
