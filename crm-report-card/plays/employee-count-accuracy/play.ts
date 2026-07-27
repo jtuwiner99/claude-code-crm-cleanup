@@ -40,7 +40,8 @@ export default definePlay(
         if (!domain) return null;
         try {
           const result = await ctx.tools.execute({
-            id: `pdl_${row.record_id}`,
+            id: 'pdl_employee_count',
+            description: 'Fetch verified employee count from PeopleDataLabs for this company domain.',
             tool: 'peopledatalabs_enrich_company',
             input: { domain },
           });
@@ -58,7 +59,8 @@ export default definePlay(
         if (!domain) return null;
         try {
           const result = await ctx.tools.execute({
-            id: `exa_${row.record_id}`,
+            id: 'exa_employee_count',
+            description: 'Fetch a citation-backed employee count answer from Exa for this company domain.',
             tool: 'exa_answer',
             input: {
               query: `How many employees work at the company at ${domain}? Answer with a single number.`,
