@@ -1,0 +1,161 @@
+# Employee-count provider benchmark: pre-registered methodology
+
+**This document is committed BEFORE any provider is run.** Its git timestamp is the
+proof. The 100 domains in `domains.csv` are fixed at the same commit. Nothing in the
+method, the sample, or the scoring rules changes after results are seen. If something
+has to change, the change is committed as its own commit with a stated reason, so the
+edit history is public too.
+
+## The question
+
+Given only a company's domain, how accurately can each provider tell you how many
+people work there, at what cost, and how often does it answer at all?
+
+## Why we are not a neutral party, and what we did about it
+
+Sculpted's own play is one of the contestants. A benchmark run by a contestant is
+worth nothing unless the method removes the ways the author could tilt it. Four
+mechanisms, all fixed in advance:
+
+1. **Ground truth never comes from LinkedIn.** Our play reads LinkedIn. If the truth
+   were also LinkedIn, we would win by construction and the result would measure
+   nothing. Ground truth comes from sources no contestant uses (below).
+2. **Judges are blind to the provider.** A judge sees a domain and a claimed number.
+   It is never told which provider produced it, and provider order is shuffled per
+   row, so a judge cannot infer identity from position.
+3. **The sample is fixed and published before the run.** No dropping hard rows after
+   the fact, no adding easy ones.
+4. **The raw per-company results are published**, not just the summary table. Anyone
+   can recompute every number in the post from the released data.
+
+If our play loses a column, that column gets published exactly as measured.
+
+## Sample: 100 companies, stratified, public
+
+The sample deliberately excludes any company from a customer CRM, for two reasons: a
+real book is one company's ICP and would make the result unrepresentative, and
+publishing it would expose that company's pipeline.
+
+Strata, fixed in `domains.csv`:
+
+| Tier | Count | What it tests |
+|---|---|---|
+| Well-known | 25 | The easy case. Everyone should get these. Establishes the floor. |
+| Mid-market | 50 | The realistic case. Recognizable in their niche, invisible outside it. |
+| Hard | 25 | Where providers actually differ: non-US, recently renamed or rebranded, subsidiaries of larger parents, and companies sharing a name with something more famous. |
+
+The hard tier is where the story is expected to be. Every provider gets Stripe right.
+
+**A redirect is not a failure.** Several domains in the sample redirect to a parent or
+to a renamed destination: segment.com to Twilio, looker.com to Google Cloud, chorus.ai
+to ZoomInfo, notion.so to notion.com. A provider that follows the redirect and answers
+about the right company is correct. A provider is only marked wrong for the wrong
+answer, never for handling a redirect the benchmark did not anticipate.
+
+**The sample was fact-checked before publication, and the check changed it.** An
+independent pass found one domain that was parked rather than owned by the intended
+company, one wrong country, and seven companies sitting in tiers that claim
+independence while actually being acquired subsidiaries or renamed entities. All were
+corrected before this commit. That pass is itself a finding worth stating plainly: in
+a hand-picked list of recognizable software companies, roughly seven percent had
+quietly stopped being the company the list assumed they were, which is the same decay
+this product exists to measure.
+
+## Ground truth
+
+For each company, an independent agent establishes the true headcount from sources
+**none of the contestants use**, in this priority order:
+
+1. A regulatory filing where one exists (SEC, Companies House, and equivalents).
+2. The company's own public statement: an about page, careers page, or press kit.
+3. A dated, credible third-party report that cites a primary source.
+
+**LinkedIn is excluded as a truth source**, since a contestant reads it. Provider
+outputs are excluded, obviously.
+
+Every ground-truth record must carry a citation URL and the date the claim was made.
+A company for which no citable source can be found is marked `no-ground-truth` and is
+excluded from accuracy scoring for every provider equally. That exclusion count is
+published, because a benchmark that quietly drops the rows nobody can verify is
+overstating what it measured.
+
+**The judges themselves get audited.** After ground truth is assembled, 20 of the 100
+are re-verified by hand. If hand-checking disagrees with the agent on more than 2 of
+20, the ground-truth pass is thrown out and redone with a tightened prompt, and that
+fact is reported.
+
+## Scoring
+
+Headcount is not a point value: a company with 480 employees may honestly report 500.
+So a provider's answer is scored **correct when it falls in the same size band as the
+ground truth, or in an adjacent band**. Bands are the ones the report card already
+uses:
+
+```
+1-10, 11-50, 51-200, 201-500, 501-1000, 1001-5000, 5001-10000, 10001+
+```
+
+Two or more bands apart is wrong. This is the same rule the shipped product applies,
+so the benchmark measures the product's actual behavior and not a rule invented for
+the occasion.
+
+Three outcomes per company per provider:
+
+- **Answered and correct**
+- **Answered and wrong**
+- **No answer** (provider returned nothing, or returned something that failed its own
+  identity check)
+
+## Metrics
+
+Reported per provider:
+
+- **Coverage**: share of the 100 that got any answer at all.
+- **Accuracy on answered**: of the rows it answered, share that were correct. This is
+  the number most benchmarks stop at, and on its own it rewards a provider that
+  answers only the easy rows.
+- **Cost per company attempted**: total spend divided by 100.
+- **Cost per correct answer**: total spend divided by correct answers. This is the
+  metric that actually decides what to buy, and it is the headline.
+- **Accuracy by tier**, so a provider that is excellent on well-known companies and
+  useless on the hard tier cannot hide behind an average.
+
+A provider that answers 40% of rows perfectly and one that answers 100% at 80%
+accuracy are different products. Reporting coverage and accuracy separately is the
+only honest way to show that.
+
+## Contestants
+
+Every provider is called through Deepline with its default domain-to-firmographics
+path, with no per-provider tuning, prompt engineering, or retry logic that the others
+do not also get. Where a provider offers several entry points, the one documented as
+its standard company enrichment is used.
+
+The Sculpted play is run exactly as shipped, with no special configuration.
+
+Actual per-call prices are recorded from the billing ledger after the run rather than
+taken from rate cards, because rate cards and invoices disagree.
+
+## What this benchmark does not measure
+
+- Fields other than headcount. A provider that is weak here may be strong at industry,
+  location, funding, or contact data.
+- Freshness over time. This is one snapshot on one date.
+- Rate limits, latency, support, or contract terms.
+- Anything about the 25 hard-tier companies that would generalize to a book of
+  well-known enterprises, or the reverse.
+
+## Reproducing this
+
+The domain list, the raw per-provider outputs, the ground-truth records with their
+citations, and the scoring script are all published in this directory. Every number in
+any post that cites this benchmark can be recomputed from them.
+
+## Known expiry on one row
+
+`intercom.com` is in the hard tier because its parent renamed to Fin, Inc. in May 2026
+and a Salesforce acquisition was signed on 15 June 2026 but has not closed. Salesforce
+expects it to close in its FY2027 Q4. If a run happens after that close, the row's
+identity changes and the note must flip from "signed but not closed" to "closed". This
+is stated in advance because a company changing identity mid-benchmark is exactly the
+failure this tier exists to expose, and it should not be discovered in the results.

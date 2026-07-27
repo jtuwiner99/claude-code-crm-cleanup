@@ -1,0 +1,101 @@
+domain,tier,note
+stripe.com,well-known,
+shopify.com,well-known,
+atlassian.com,well-known,
+datadoghq.com,well-known,
+snowflake.com,well-known,
+hubspot.com,well-known,
+twilio.com,well-known,
+cloudflare.com,well-known,
+gitlab.com,well-known,
+figma.com,well-known,
+notion.so,well-known,
+airtable.com,well-known,
+asana.com,well-known,
+monday.com,well-known,
+canva.com,well-known,
+databricks.com,well-known,
+okta.com,well-known,
+docusign.com,well-known,
+zendesk.com,well-known,
+dropbox.com,well-known,
+squarespace.com,well-known,
+klaviyo.com,well-known,
+zapier.com,well-known,
+vercel.com,well-known,
+clay.com,mid-market,
+apollo.io,mid-market,
+outreach.io,mid-market,
+salesloft.com,mid-market,
+gong.io,mid-market,
+lattice.com,mid-market,
+cultureamp.com,mid-market,
+gusto.com,mid-market,
+rippling.com,mid-market,
+deel.com,mid-market,
+pipedrive.com,mid-market,
+close.com,mid-market,
+copper.com,mid-market,
+freshworks.com,mid-market,
+helpscout.com,mid-market,
+front.com,mid-market,
+vidyard.com,mid-market,
+wistia.com,mid-market,
+mux.com,mid-market,
+netlify.com,mid-market,
+render.com,mid-market,
+fly.io,mid-market,
+planetscale.com,mid-market,
+supabase.com,mid-market,
+clickhouse.com,mid-market,
+cockroachlabs.com,mid-market,
+temporal.io,mid-market,
+retool.com,mid-market,
+appsmith.com,mid-market,
+n8n.io,mid-market,
+workato.com,mid-market,
+postman.com,mid-market,
+konghq.com,mid-market,
+readme.com,mid-market,
+mintlify.com,mid-market,
+courier.com,mid-market,
+knock.app,mid-market,
+resend.com,mid-market,
+customer.io,mid-market,
+braze.com,mid-market,
+iterable.com,mid-market,
+amplitude.com,mid-market,
+mixpanel.com,mid-market,
+launchdarkly.com,mid-market,
+gocardless.com,hard,non-US (UK)
+qonto.com,hard,non-US (France)
+pennylane.com,hard,non-US (France)
+personio.com,hard,non-US (Germany)
+sennder.com,hard,non-US (Germany)
+forto.com,hard,non-US (Germany)
+mambu.com,hard,"non-US (Netherlands), founded in Germany"
+backbase.com,hard,non-US (Netherlands)
+wise.com,hard,non-US (UK) and renamed from TransferWise
+checkout.com,hard,non-US (UK) and name collides with the generic term
+starlingbank.com,hard,non-US (UK)
+tide.co,hard,non-US (UK) and short name collides with a consumer brand
+bolt.eu,hard,non-US (Estonia) and name collides with other companies called Bolt
+bird.com,hard,renamed from MessageBird and collides with a scooter company
+sinch.com,hard,rolled up several acquired brands
+segment.com,hard,subsidiary of Twilio
+mailchimp.com,hard,subsidiary of Intuit
+mulesoft.com,hard,subsidiary of Salesforce
+tableau.com,hard,subsidiary of Salesforce
+slack.com,hard,subsidiary of Salesforce
+github.com,hard,subsidiary of Microsoft
+chorus.ai,hard,subsidiary of ZoomInfo
+looker.com,hard,subsidiary of Google
+optimizely.com,hard,merged with Episerver and kept the smaller brand name
+mongodb.com,well-known,
+posthog.com,mid-market,
+linear.app,mid-market,
+cal.com,mid-market,
+tailscale.com,mid-market,
+raycast.com,mid-market,
+warp.dev,mid-market,
+intercom.com,hard,parent renamed to Fin Inc in 2026 and a Salesforce acquisition is signed but not closed
