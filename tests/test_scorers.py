@@ -1,0 +1,77 @@
+from crm_report_card.scorers import band_index, score_employee_count, SCORERS
+
+
+def test_band_index_groups_hubspot_style_bands():
+    assert band_index(5) == band_index(10)
+    assert band_index(11) == band_index(50)
+    assert band_index(10) != band_index(11)
+    assert band_index(20000) == band_index(50000)
+
+
+def test_one_band_apart_is_not_a_mismatch():
+    """Off by a little is not wrong. Off by a lot is."""
+    rows = [{"record_id": "0", "stored_employee_count": "10",
+             "verified_employee_count": "12", "source": "peopledatalabs"}]
+    out = score_employee_count(rows)
+    assert out["checked"] == 1
+    assert out["mismatched"] == 0
+    assert out["rate"] == 0.0
+
+
+def test_two_or_more_bands_apart_is_a_mismatch():
+    rows = [{"record_id": "0", "stored_employee_count": "10",
+             "verified_employee_count": "900", "source": "peopledatalabs"}]
+    out = score_employee_count(rows)
+    assert out["checked"] == 1
+    assert out["mismatched"] == 1
+    assert out["rate"] == 1.0
+    assert out["offending_ids"] == ["0"]
+    assert "10" in out["examples"][0]["detail"]
+    assert "900" in out["examples"][0]["detail"]
+
+
+def test_provider_miss_is_unverifiable_not_a_mismatch():
+    """The provider having no data is a different fact from the CRM being wrong."""
+    rows = [
+        {"record_id": "0", "stored_employee_count": "10",
+         "verified_employee_count": "", "source": ""},
+        {"record_id": "1", "stored_employee_count": "10",
+         "verified_employee_count": "900", "source": "peopledatalabs"},
+    ]
+    out = score_employee_count(rows)
+    assert out["unverifiable"] == 1
+    assert out["checked"] == 1
+    assert out["mismatched"] == 1
+    assert out["rate"] == 1.0          # 1 of 1 checked, not 1 of 2 rows
+    assert out["offending_ids"] == ["1"]
+
+
+def test_blank_stored_value_is_skipped_not_scored():
+    rows = [{"record_id": "0", "stored_employee_count": "",
+             "verified_employee_count": "900", "source": "peopledatalabs"}]
+    out = score_employee_count(rows)
+    assert out["skipped_blank"] == 1
+    assert out["checked"] == 0
+    assert out["rate"] == 0.0
+
+
+def test_unparseable_values_are_unverifiable_not_zero():
+    rows = [{"record_id": "0", "stored_employee_count": "about 50",
+             "verified_employee_count": "n/a", "source": "peopledatalabs"}]
+    out = score_employee_count(rows)
+    assert out["checked"] == 0
+    assert out["unverifiable"] == 1
+
+
+def test_examples_are_capped_at_twelve():
+    rows = [{"record_id": str(i), "stored_employee_count": "5",
+             "verified_employee_count": "9000", "source": "peopledatalabs"}
+            for i in range(30)]
+    out = score_employee_count(rows)
+    assert out["mismatched"] == 30
+    assert len(out["examples"]) == 12
+    assert len(out["offending_ids"]) == 30
+
+
+def test_scorer_is_registered_under_its_unlock_key():
+    assert SCORERS["employee_count_accuracy"] is score_employee_count
