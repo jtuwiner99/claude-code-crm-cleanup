@@ -17,3 +17,6 @@ __pycache__/
 # Test runner + OS cruft.
 .pytest_cache/
 .DS_Store
+
+# Internal design docs live in sculpted-studio, never in this public repo.
+docs/

@@ -1,5 +1,11 @@
 # CRM Report Card
 
+> **Status: active development.** The free offline scan is complete and covered
+> by 211 tests. The paid accuracy layer (the plays that unlock the accuracy
+> grade) is built but has not yet been proven end to end against a live
+> provider, so treat those rows as unreleased. This notice comes down when it
+> has been.
+
 A Tier 0 CRM data-quality audit. Point it at a CRM CSV export and it produces
 a report card: an overall letter grade, six deterministic FACTs (duplicates,
 missing critical fields, contradictions, junk records, stale records, dead
@@ -12,7 +18,7 @@ writes back to a CRM and never claims to have fixed anything.
 
 As a plugin (recommended, gets the accuracy plays too):
 
-    /plugin marketplace add <owner>/claude-code-crm-cleanup
+    /plugin marketplace add jtuwiner99/claude-code-crm-cleanup
     /plugin install crm-report-card@sculpted-plugins
 
 As a standalone skill (free offline scan only):
