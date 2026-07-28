@@ -222,6 +222,33 @@ function mergeVerification(round1: any, round2: any): any {
   return round2 || round1;
 }
 
+// Assemble the final per-company output rows from round 1's verified rows
+// plus round 2's rescue map, via mergeVerification() above. Extracted as its
+// own named function -- rather than inlined in the dataset call below -- so
+// a test can assert the exact row shape handed to `ctx.dataset('output',
+// ...)` without needing a live ctx. This function only decides WHAT the
+// merged rows look like; it is deliberately silent on HOW they get
+// returned (materialized array vs. durable dataset handle) -- that is a
+// separate concern, guarded by a separate source-level test, because a
+// past regression got the merge right here and still shipped truncated
+// output by wrapping this in `.map(...)` and returning a plain array
+// instead of a dataset handle.
+function buildOutputRows(verifiedRows1: any[], round2ByRecordId: Record<string, any>): any[] {
+  return verifiedRows1.map((r: any) => {
+    const verification = mergeVerification(r.verification, round2ByRecordId[r.record_id]);
+    return {
+      record_id: r.record_id,
+      domain: r.domain,
+      stored_employee_count: r.company_size,
+      verified_employee_count: verification.verified_employee_count,
+      source: verification.source,
+      verified_range: verification.verified_range,
+      verified_linkedin_url: verification.verified_linkedin_url,
+      identity_method: verification.identity_method,
+    };
+  });
+}
+
 // Legal-entity suffixes that show up on plenty of genuinely-correct LinkedIn
 // pages ("acme-inc" for domain "acme.com"). Filtered out of the "extra
 // token" count below so spelling out a corporate suffix does not by itself
@@ -640,21 +667,27 @@ export default definePlay(
     // 1 left them (unverifiable, not a mismatch).
     // ---------------------------------------------------------------
 
-    return {
-      rows: verifiedRows1.map((r: any) => {
-        const verification = mergeVerification(r.verification, round2ByRecordId[r.record_id]);
-        return {
-          record_id: r.record_id,
-          domain: r.domain,
-          stored_employee_count: r.company_size,
-          verified_employee_count: verification.verified_employee_count,
-          source: verification.source,
-          verified_range: verification.verified_range,
-          verified_linkedin_url: verification.verified_linkedin_url,
-          identity_method: verification.identity_method,
-        };
-      }),
-    };
+    const outputRows = buildOutputRows(verifiedRows1, round2ByRecordId);
+
+    // Phase 5: persist the merged rows as their own durable dataset and
+    // return THAT HANDLE, not a materialized array. A plain
+    // `verifiedRows1.map(...)` array is exactly what shipped here before --
+    // correct in every unit test and in `deepline plays check`, but the
+    // Deepline runtime caps a play's inline return payload (the run-event
+    // document has a size limit), so on a real 100-row run it silently
+    // truncated to the first 20 rows. `ctx.dataset(...).run(...)` persists
+    // every row to a durable table with no such cap; returning the handle
+    // WITHOUT calling `.materialize()` on it keeps `rows` a dataset
+    // reference (`isDataset: true` in `deepline plays check`'s output), so
+    // `deepline runs export --dataset result.rows` retrieves all 100 rows
+    // regardless of sample size. No provider call here -- this is a plain
+    // data-shaping dataset, so the two-batched-Apify-call ceiling is
+    // untouched.
+    const output = await ctx
+      .dataset('output', outputRows)
+      .run({ key: 'record_id' });
+
+    return { rows: output };
   },
   {
     description:
