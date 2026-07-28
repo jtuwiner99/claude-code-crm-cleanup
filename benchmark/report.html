@@ -1,0 +1,365 @@
+<!-- Brand: Sculpted -->
+<title>We paid six data providers for employee count. One was 20x more accurate than another.</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #fafafa;
+    --bg-panel: #f5f5f5;
+    --text: #050505;
+    --text-muted: #51565a;
+    --text-subtle: #737373;
+    --border: #e5e5e5;
+    --border-strong: #d4d4d4;
+    --accent: #fe7b57;
+    --bar: #d4d4d4;
+    --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --display: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a; --bg-alt: #101010; --bg-panel: #161616;
+      --text: #fafafa; --text-muted: #a3a3a3; --text-subtle: #8a8a8a;
+      --border: #262626; --border-strong: #333333; --bar: #3a3a3a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a; --bg-alt: #101010; --bg-panel: #161616;
+    --text: #fafafa; --text-muted: #a3a3a3; --text-subtle: #8a8a8a;
+    --border: #262626; --border-strong: #333333; --bar: #3a3a3a;
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --bg-alt: #fafafa; --bg-panel: #f5f5f5;
+    --text: #050505; --text-muted: #51565a; --text-subtle: #737373;
+    --border: #e5e5e5; --border-strong: #d4d4d4; --bar: #d4d4d4;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 17px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 72px 28px 96px; }
+  @media (max-width: 640px) { .wrap { padding: 44px 20px 64px; } }
+
+  .eyebrow {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-subtle); margin: 0 0 20px;
+  }
+  h1 {
+    font-family: var(--display); font-size: clamp(34px, 6vw, 56px);
+    font-weight: 800; line-height: 1.06; letter-spacing: -0.02em;
+    margin: 0 0 24px; text-wrap: balance;
+  }
+  .dek { font-size: 20px; line-height: 1.55; color: var(--text-muted); margin: 0 0 12px; }
+  h2 {
+    font-family: var(--display); font-size: 26px; font-weight: 700;
+    letter-spacing: -0.01em; margin: 0 0 16px; text-wrap: balance;
+  }
+  h3 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+  p { margin: 0 0 18px; }
+  a { color: var(--text); text-decoration-color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+  strong { font-weight: 650; }
+
+  section { padding-top: 44px; margin-top: 44px; border-top: 1px solid var(--border); }
+  .lede-rule { height: 1px; background: var(--border); margin: 36px 0 0; }
+
+  /* meta strip */
+  .meta { display: flex; flex-wrap: wrap; gap: 28px; margin: 28px 0 0; }
+  .meta div { display: flex; flex-direction: column; gap: 2px; }
+  .meta .n { font-family: var(--mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .meta .l { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-subtle); }
+
+  /* table */
+  .scroll { overflow-x: auto; margin: 0 0 14px; }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15px; }
+  th {
+    text-align: left; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--text-subtle); font-weight: 600; padding: 0 12px 10px 0;
+    border-bottom: 1px solid var(--border-strong); white-space: nowrap;
+  }
+  td { padding: 13px 12px 13px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.win td { background: var(--bg-alt); }
+  tr.win td:first-child { box-shadow: inset 2px 0 0 var(--accent); padding-left: 12px; }
+  .name { font-weight: 600; }
+  .tag { display: block; font-size: 12px; color: var(--text-subtle); font-weight: 400; }
+  .barcell { display: flex; align-items: center; gap: 9px; }
+  .bar { height: 5px; background: var(--bar); border-radius: 1px; }
+  tr.win .bar { background: var(--accent); }
+  .none { color: var(--text-subtle); font-style: italic; }
+
+  /* findings */
+  .find { margin: 0 0 26px; }
+  .find:last-child { margin-bottom: 0; }
+  .kicker {
+    font-family: var(--mono); font-size: 12px; color: var(--text-subtle);
+    letter-spacing: 0.04em; margin: 0 0 4px;
+  }
+
+  /* two-job diagram */
+  .jobs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--border); }
+  @media (max-width: 560px) { .jobs { grid-template-columns: 1fr; } }
+  .job { padding: 22px; }
+  .job + .job { border-left: 1px solid var(--border); }
+  @media (max-width: 560px) { .job + .job { border-left: 0; border-top: 1px solid var(--border); } }
+  .job .step { font-family: var(--mono); font-size: 12px; color: var(--text-subtle); margin: 0 0 8px; }
+  .job p { margin: 0; font-size: 15px; color: var(--text-muted); }
+
+  .callout {
+    border-left: 2px solid var(--accent); padding: 2px 0 2px 18px; margin: 0 0 18px;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+
+  ul { margin: 0 0 18px; padding-left: 20px; }
+  li { margin-bottom: 9px; }
+
+  .cta { border: 1px solid var(--border-strong); padding: 28px; margin-top: 44px; }
+  .cta h2 { margin-bottom: 10px; }
+  .cta code {
+    font-family: var(--mono); font-size: 13px; background: var(--bg-panel);
+    padding: 2px 6px; border-radius: 2px;
+  }
+  footer {
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--text-subtle);
+  }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">Sculpted · Benchmark · July 2026</p>
+  <h1>We paid six data providers for employee count. One was 20x more accurate than another.</h1>
+  <p class="dek">Same 100 companies. Same question: how many people work here. The answers disagreed by a factor of twenty, and the price you pay predicted almost nothing about which one was right.</p>
+
+  <div class="meta">
+    <div><span class="n">100</span><span class="l">Companies</span></div>
+    <div><span class="n">6</span><span class="l">Providers</span></div>
+    <div><span class="n">100%</span><span class="l">Hand verified</span></div>
+    <div><span class="n">$0.01–$0.21</span><span class="l">Per correct answer</span></div>
+  </div>
+  <div class="lede-rule"></div>
+
+  <section>
+    <h2>Getting a headcount right is two jobs, not one</h2>
+    <p>Almost every data-quality report treats accuracy as a single number. That hides which half actually broke, and the two halves fail for completely different reasons.</p>
+    <div class="jobs">
+      <div class="job">
+        <p class="step">Job 1</p>
+        <h3>Find the right company</h3>
+        <p>Turn a domain into the correct company record. Sounds trivial. It is where a provider quietly returns a staffing agency when you asked for Airtable.</p>
+      </div>
+      <div class="job">
+        <p class="step">Job 2</p>
+        <h3>Count the people</h3>
+        <p>Report how many work there. A provider can find exactly the right company and still be off by a quarter.</p>
+      </div>
+    </div>
+    <p style="margin-top:22px">So we scored both, separately, and then scored the count <em>again</em> over only the rows where the company was right. That third number tells you whether a provider has a counting problem or a matching problem. They need very different fixes.</p>
+  </section>
+
+  <section>
+    <h2>The results</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Right company</th>
+            <th>Headcount correct</th>
+            <th>Median error</th>
+            <th>Cost per correct</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="win">
+            <td class="name">Sculpted play<span class="tag">read the source directly</span></td>
+            <td class="num">100%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:64px"></span>100%</span></td>
+            <td class="num">0.0%</td>
+            <td class="num">$0.010</td>
+          </tr>
+          <tr>
+            <td class="name">Deepline native<span class="tag">enrich_company</span></td>
+            <td class="num">96.9%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:56px"></span>87.9%</span></td>
+            <td class="num">1.3%</td>
+            <td class="num">$0.113</td>
+          </tr>
+          <tr>
+            <td class="name">limadata</td>
+            <td class="num">95.9%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:51px"></span>79.8%</span></td>
+            <td class="num">6.2%</td>
+            <td class="num">$0.035</td>
+          </tr>
+          <tr>
+            <td class="name">PeopleDataLabs</td>
+            <td class="num">100%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:43px"></span>67.7%</span></td>
+            <td class="num">24.7%</td>
+            <td class="num">$0.209</td>
+          </tr>
+          <tr>
+            <td class="name">leadmagic</td>
+            <td class="num">100%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:42px"></span>65.7%</span></td>
+            <td class="num">27.0%</td>
+            <td class="num">$0.052</td>
+          </tr>
+          <tr>
+            <td class="name">Crustdata</td>
+            <td class="num">89.9%</td>
+            <td class="num"><span class="barcell"><span class="bar" style="width:36px"></span>55.6%</span></td>
+            <td class="num none">band only</td>
+            <td class="num">$0.073</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:14px;color:var(--text-subtle);margin-bottom:0">A seventh provider was tested and returned nothing on all 100 calls, without a single error. It is left out of the table because we could not establish whether that was the product or our account.</p>
+  </section>
+
+  <section>
+    <h2>What we learned</h2>
+
+    <div class="find">
+      <p class="kicker">01</p>
+      <h3>Price predicted nothing</h3>
+      <p>The most expensive provider we tested was among the least accurate. A provider costing a fifth as much was four times closer to the truth. If you are paying a premium for firmographic data, that premium is buying coverage and convenience, not correctness.</p>
+    </div>
+
+    <div class="find">
+      <p class="kicker">02</p>
+      <h3>Finding the company is nearly solved. Counting is not.</h3>
+      <p>Three providers matched the right company on all 100. Then their headcounts ranged from 1.3% off to 27% off. Every one of them knew exactly which company you meant and still disagreed wildly about how big it was.</p>
+    </div>
+
+    <div class="find">
+      <p class="kicker">03</p>
+      <h3>A silent null is worse than a loud failure</h3>
+      <p>One provider returned an empty payload one hundred times with no error at all. Every call "succeeded." A pipeline that treats no-error as it-worked will record a hundred blanks as a clean run and nobody finds out until a campaign goes to nobody.</p>
+    </div>
+
+    <div class="find">
+      <p class="kicker">04</p>
+      <h3>A range is not a number</h3>
+      <p>One provider only ever answers with a band like 51 to 200. If your routing rule cuts at 100 employees, that provider cannot serve it at any accuracy level. Worth knowing before you build the rule, not after.</p>
+    </div>
+
+    <div class="find">
+      <p class="kicker">05</p>
+      <h3>7% of our own sample had quietly changed identity</h3>
+      <p>We hand-picked 100 recognizable software companies. Before running anything, a fact-check found seven that had been acquired, renamed, or absorbed and were no longer the company the list assumed. That is the same decay sitting in your CRM right now.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>What we did so you do not have to take our word for it</h2>
+    <p>We built one of the things being measured. That makes this benchmark worth exactly nothing unless the method removes the ways we could tilt it. So:</p>
+    <ul>
+      <li>The method and the 100 companies were <strong>published before a single provider ran</strong>. The commit timestamps are the proof.</li>
+      <li>Ground truth was recorded <strong>blind</strong>, in a console that shows candidate answers unlabeled and shuffled and is structurally incapable of reading the provider results.</li>
+      <li>Every amendment we made afterward is named, dated, and reported <strong>next to the number it replaced</strong>, including one rule change that happened to help us.</li>
+      <li>Every figure above is recomputed from the raw per-company results by a script, not typed by hand. The full dataset goes out with the tool.</li>
+    </ul>
+    <div class="callout">
+      <p><strong>And the part most reports leave out.</strong> Our own count score is not an accuracy win. We read the same source the benchmark scores against, so 0.0% error is reading fidelity, not superior data. The honest comparison is between the providers that do not read it: 1.3%, 6.2%, 24.7%, 27.0%. On finding the right company we tied with two others at 100%. We do not claim an edge there.</p>
+    </div>
+  </section>
+
+  <div class="cta">
+    <p class="eyebrow" style="margin-bottom:12px">Coming soon</p>
+    <h2>The CRM Report Card</h2>
+    <p>A free audit that grades your CRM the way this benchmark grades a provider. Two layers, because the same split applies to your own data.</p>
+
+    <div class="jobs" style="margin:20px 0">
+      <div class="job">
+        <p class="step">Layer 1 · Completeness</p>
+        <h3>What the file can prove</h3>
+        <p>Duplicates, dead domains, missing properties and fill rates, junk records, stale data, orphaned contacts. Deterministic, runs offline on your export, no keys, never writes back.</p>
+      </div>
+      <div class="job">
+        <p class="step">Layer 2 · Accuracy</p>
+        <h3>What the file cannot prove</h3>
+        <p>Verified employee counts, job changes and still-employed checks, email deliverability. A file cannot tell you whether its own values are true. That needs live verification, which is what the benchmark above was built to test.</p>
+      </div>
+    </div>
+
+    <p style="margin-bottom:0">Data can be one hundred percent complete and ninety percent wrong. Complete-but-wrong is the dangerous kind, because it looks fine.</p>
+  </div>
+
+
+  <section id="method">
+    <p class="eyebrow">Appendix</p>
+    <h2>Full methodology</h2>
+    <p>This benchmark was run by one of its own contestants. That makes it worth nothing unless the method removes the ways we could tilt it, so the method is written out in full here, including the parts that are inconvenient for us.</p>
+
+    <h3 style="margin-top:32px">The question, split three ways</h3>
+    <p>Given only a company domain, how accurately can a provider tell you how many people work there, at what cost, and how often does it answer at all. A single accuracy number hides which part a provider actually fails, so it was split:</p>
+    <ul>
+      <li><strong>Does it find the right company?</strong> Scored against the LinkedIn company page a human confirmed. Every contestant gets the same domain and no advantage.</li>
+      <li><strong>Does it then get the headcount right?</strong> Scored in size bands, and separately over only the rows where the company was right, so a matching failure is never misreported as a counting failure.</li>
+      <li><strong>Does it return an exact number or only a range?</strong> Recorded as a capability, not folded into accuracy. A provider answering "51 to 200" cannot serve a routing rule that cuts at 100, at any accuracy level.</li>
+    </ul>
+
+    <h3 style="margin-top:32px">The sample</h3>
+    <p>100 public companies, fixed and committed before any provider ran, in three tiers: 25 well-known, 50 mid-market, 25 deliberately hard (non-US, recently renamed, subsidiaries of larger parents, and names that collide with something more famous).</p>
+    <p>No customer CRM data was used, for two reasons. A real book is one company's ICP, which would make the result unrepresentative. And publishing it would expose that company's pipeline.</p>
+    <p>The sample was fact-checked before publication and the check changed it. One domain turned out to be parked rather than owned by the intended company. One country was wrong. Seven companies sat in tiers claiming independence while actually being acquired subsidiaries or renamed entities. That is roughly seven percent of a hand-picked list of recognizable software companies that had quietly stopped being the company the list assumed. It is the same decay this whole project exists to measure, found in our own data before we measured anyone else's.</p>
+
+    <h3 style="margin-top:32px">Where the truth came from</h3>
+    <p>A human recorded two values for all 100 companies, one at a time: the correct LinkedIn company page, and the employee count from that page's People tab. Roughly two hours of clicking.</p>
+    <p>The review was blind. The console showed the domain, the company's own homepage framed in the page, and the candidate answers deduplicated, unlabeled, and shuffled, with a path to reject all of them and paste the correct page instead. No provider name and no provider's employee count was ever rendered, so the reviewer was judging a page rather than a vendor. The console is structurally incapable of reading the provider result files.</p>
+
+    <h3 style="margin-top:32px">Why LinkedIn is the reference, and what that costs us</h3>
+    <p>Truth for the count is the LinkedIn People number. That is deliberate: B2B firmographic providers overwhelmingly derive headcount from LinkedIn-sourced profiles, so it is the thing they are all approximating, and distance from it is what a buyer experiences as staleness.</p>
+    <div class="callout">
+      <p><strong>The consequence, stated plainly.</strong> Our own play reads the LinkedIn People count directly. Scoring it against the LinkedIn People count measures its reading fidelity, not independent correctness. A perfect count score for us is expected and is not a finding. The findings are the other providers' distance from the reference. The meaningful comparison is between the providers that do not read it: 1.3%, 6.2%, 24.7%, 27.0%.</p>
+    </div>
+
+    <h3 style="margin-top:32px">How answers were scored</h3>
+    <p>An answer is correct when it lands in the <strong>same</strong> size band as the reference. Not an adjacent band. Bands are 1 to 10, 11 to 50, 51 to 200, 201 to 500, 501 to 1000, 1001 to 5000, 5001 to 10000, and 10001 or more.</p>
+    <p>Adjacent-band tolerance was dropped because routing rules cut at band boundaries. A company at 99 employees goes one way and 101 goes the other, so forgiving a band error hides the mistake that actually costs an operator something. Under the older, more forgiving rule the two weakest providers scored 99% and 87% instead of 68% and 56%. Both sets of numbers are kept.</p>
+
+    <h3 style="margin-top:32px">Accuracy by difficulty, and a prediction that was wrong</h3>
+    <div class="scroll">
+      <table style="min-width:460px">
+        <thead><tr><th>Provider</th><th>Well-known</th><th>Mid-market</th><th>Hard</th></tr></thead>
+        <tbody>
+          <tr class="win"><td class="name">Sculpted play</td><td class="num">25/25</td><td class="num">50/50</td><td class="num">24/24</td></tr>
+          <tr><td class="name">PeopleDataLabs</td><td class="num">20/25</td><td class="num">29/50</td><td class="num">18/24</td></tr>
+          <tr><td class="name">Crustdata</td><td class="num">12/25</td><td class="num">26/50</td><td class="num">17/24</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:16px">The method predicted, in writing and before anything ran, that the hard tier would separate the providers. It did the opposite. Both weaker providers did worse on <em>famous</em> companies than on obscure ones. Famous companies have many LinkedIn pages: regional arms, legacy entities, business units. Obscure ones usually have exactly one. The prediction was wrong and it stays on the record rather than being quietly deleted.</p>
+
+    <h3 style="margin-top:32px">Everything that changed after results were visible</h3>
+    <p>Three things changed once numbers existed. Each is the kind of thing a benchmark author can use to flatter themselves, so each is named with its direction of effect.</p>
+    <ul>
+      <li><strong>Scoring was tightened</strong> from same-or-adjacent band to same band only. This moved every competitor down and left our score unchanged. Both sets of numbers are published for exactly that reason.</li>
+      <li><strong>Four ground-truth rows were corrected.</strong> Three of them raised a competitor's score, because our reference had been wrong and was penalizing it. The fourth lowered it. Corrections that only ever help the author are the tell. These did not.</li>
+      <li><strong>A redirect rule was extended to LinkedIn slugs.</strong> A provider returning a company's former page should not be marked wrong if that page still resolves. Applying it fairly took a competitor from 94.9% to 100% on finding the right company, erasing our lead on that dimension entirely.</li>
+    </ul>
+
+    <h3 style="margin-top:32px">Notes on individual providers</h3>
+    <ul>
+      <li><strong>PeopleDataLabs and LeadMagic</strong> both found the correct company on all 100. Their failure is purely the count, at 24.7% and 27.0% median error.</li>
+      <li><strong>Crustdata</strong> is the only contestant with a matching problem, at 89.9%, and the misses are not near misses. It also only ever answers with a range, never an exact number.</li>
+      <li><strong>A seventh provider</strong> returned a null payload on all 100 calls with no error at all. It is excluded from the tables rather than scored zero, because we could not establish whether that is the product, our account, or a broken integration. All three look identical from outside. It has been reported to the platform.</li>
+    </ul>
+
+    <h3 style="margin-top:32px">What this does not measure</h3>
+    <p>Fields other than headcount. Freshness over time, since this is one snapshot on one day. Rate limits, latency, support, or contract terms. Anything about the hard tier that would generalise to a book of enterprises, or the reverse. And it is 100 companies, which is enough to separate 100% from 68% and nowhere near enough to separate 98% from 97%.</p>
+
+    <h3 style="margin-top:32px">Reproducibility</h3>
+    <p>Every figure in this report is computed from the raw per-company results by a script rather than typed by hand. The domain list, the recorded ground truth including its corrections, every provider answer, and the scoring script are released together with the tool.</p>
+  </section>
+
+  <footer>
+    Sculpted · Benchmark run 28 July 2026 · 100 companies, hand-verified ground truth · Method committed before the run · Full dataset released with the tool
+  </footer>
+</div>
