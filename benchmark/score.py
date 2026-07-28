@@ -44,6 +44,9 @@ COST_PER_CALL_USD = {
     "peopledatalabs": 0.14,
     "crustdata": 0.04,
     "datagma": 0.027,
+    "enrich_company": 0.098,
+    "limadata": 0.028,
+    "leadmagic": 0.034,
 }
 
 BANDS = [(1, 10), (11, 50), (51, 200), (201, 500),

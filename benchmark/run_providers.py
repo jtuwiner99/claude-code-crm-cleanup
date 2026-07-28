@@ -14,6 +14,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -41,6 +42,32 @@ PROVIDERS = [
         "count_paths": ["employee_count", "headcount"],
         "band_paths": ["employee_count_range"],
         "url_paths": ["linkedin_profile_url", "linkedin_url"],
+    },
+    {
+        # Deepline's own native enricher. Returns an exact employees_count plus a
+        # size band and a linkedin_id.
+        "name": "enrich_company",
+        "tool": "enrich_company",
+        "param": "domain",
+        "count_paths": ["employees_count", "employee_count"],
+        "band_paths": ["size"],
+        "url_paths": ["linkedin_url", "linkedin_id"],
+    },
+    {
+        "name": "limadata",
+        "tool": "limadata_enrich_company",
+        "param": "domain",
+        "count_paths": ["employee_count", "employees_count"],
+        "band_paths": ["employee_range", "size"],
+        "url_paths": ["linkedin_url"],
+    },
+    {
+        "name": "leadmagic",
+        "tool": "leadmagic_company_search",
+        "param": "company_domain",
+        "count_paths": ["employeeCount", "employee_count"],
+        "band_paths": ["employeeCountRange", "size"],
+        "url_paths": ["linkedin_url", "linkedinUrl"],
     },
     {
         "name": "datagma",
@@ -94,6 +121,21 @@ def _search(obj, keys, depth=0):
     return None
 
 
+_LI_COMPANY = re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/company/[^\"'\s\\]+", re.I)
+
+
+def find_linkedin_url(raw) -> str:
+    """First LinkedIn company URL anywhere in the payload.
+
+    Providers nest it differently: some use a linkedin_url key, limadata puts it
+    at company.linkedin.url where the key is just 'url'. Searching by key name
+    misses that, and adding 'url' to the key list would happily return a
+    crunchbase or facebook link instead. Matching the URL shape cannot.
+    """
+    m = _LI_COMPANY.search(json.dumps(raw))
+    return m.group(0) if m else ""
+
+
 def call_provider(provider: dict, domain: str) -> dict:
     payload = json.dumps({provider["param"]: domain})
     out = _run([DEEPLINE, "tools", "execute", provider["tool"], "--json", "--input", payload])
@@ -123,7 +165,7 @@ def call_provider(provider: dict, domain: str) -> dict:
 
     count = _search(raw, provider["count_paths"])
     band = _search(raw, provider["band_paths"])
-    url = _search(raw, provider.get("url_paths", []))
+    url = _search(raw, provider.get("url_paths", [])) or find_linkedin_url(raw)
     row["count"] = "" if count is None else str(count)
     row["band"] = "" if band is None else str(band)
     row["linkedin_url"] = "" if url is None else str(url)
@@ -143,6 +185,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--limit", type=int, help="only the first N domains")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, call nothing")
     ap.add_argument("--out", default=os.path.join(HERE, "raw_results.csv"))
+    ap.add_argument("--providers", help="comma-separated provider names to run; "
+                    "others are left untouched in the existing results file, so "
+                    "adding a contestant does not re-pay for the ones already run")
     args = ap.parse_args(argv)
 
     with open(os.path.join(HERE, "domains.csv"), newline="", encoding="utf-8") as fh:
@@ -150,27 +195,45 @@ def main(argv: list[str]) -> int:
     if args.limit:
         domains = domains[: args.limit]
 
-    total = len(domains) * len(PROVIDERS)
-    print(f"{len(domains)} domains x {len(PROVIDERS)} providers = {total} calls")
+    providers = PROVIDERS
+    if args.providers:
+        want = {p.strip() for p in args.providers.split(",")}
+        providers = [p for p in PROVIDERS if p["name"] in want]
+        missing = want - {p["name"] for p in providers}
+        if missing:
+            print(f"unknown provider(s): {sorted(missing)}", file=sys.stderr)
+            return 2
+
+    total = len(domains) * len(providers)
+    print(f"{len(domains)} domains x {len(providers)} providers = {total} calls")
     if args.dry_run:
-        for p in PROVIDERS:
+        for p in providers:
             print(f"  {p['name']:16s} {p['tool']} ({p['param']})")
         return 0
 
     results = []
     for n, d in enumerate(domains, 1):
-        for p in PROVIDERS:
+        for p in providers:
             row = call_provider(p, d["domain"])
             row["tier"] = d["tier"]
             results.append(row)
         done = [r for r in results if r["domain"] == d["domain"]]
         got = sum(1 for r in done if r["count"] or r["band"])
-        print(f"[{n}/{len(domains)}] {d['domain']:24s} answered by {got}/{len(PROVIDERS)}", flush=True)
+        print(f"[{n}/{len(domains)}] {d['domain']:24s} answered by {got}/{len(providers)}", flush=True)
 
     fields = ["domain", "tier", "provider", "count", "band", "linkedin_url", "error", "payload_bytes"]
+    # Merge with whatever is already in the file so a targeted run adds a
+    # contestant without re-paying for the ones already measured.
+    existing = []
+    if args.providers and os.path.exists(args.out):
+        ran = {p["name"] for p in providers}
+        with open(args.out, newline="", encoding="utf-8") as fh:
+            existing = [r for r in csv.DictReader(fh) if r.get("provider") not in ran]
     with open(args.out, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
+        for r in existing:
+            w.writerow({k: r.get(k, "") for k in fields})
         w.writerows(results)
     print(f"wrote {len(results)} rows to {args.out}")
     return 0

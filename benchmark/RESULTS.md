@@ -15,8 +15,11 @@ domain.
 | Provider | Answered | Right company | Band correct | (lenient rule) | Median error | Cost per correct |
 |---|---|---|---|---|---|---|
 | **Sculpted play** | 99/100 | 100.0% | **100.0%** | 100.0% | 0.0% | **$0.010** |
-| PeopleDataLabs | 100/100 | 100.0% | 67.7% | 99.0% | **24.7%** | $0.209 |
+| limadata | 98/100 | 95.9% | 79.8% | 94.9% | 6.2% | $0.035 |
+| leadmagic | 98/100 | 100.0% | 65.7% | 98.0% | 27.0% | $0.052 |
 | Crustdata | 99/100 | 89.9% | 55.6% | 86.9% | band only | $0.073 |
+| enrich_company (Deepline native) | 99/100 | 96.9% | 87.9% | 92.9% | **1.3%** | $0.113 |
+| PeopleDataLabs | 100/100 | 100.0% | 67.7% | 99.0% | 24.7% | **$0.209** |
 
 **Band correct** means the answer lands in the same size band as the reference.
 **(lenient rule)** is the original rule, which also accepted an adjacent band; it
@@ -79,10 +82,26 @@ below.
 
 ## Findings
 
-**Finding the right company is a solved problem; knowing how many people work
-there is not.** Three of the five contestants resolved identity perfectly. Only
-one of them then got the headcount right. The interesting failure is not matching,
-it is counting.
+**Finding the right company is close to solved; knowing how many people work
+there is not.** Three contestants resolved identity perfectly and two more cleared
+95%. Counting is where they separate, and they separate enormously.
+
+**Headcount accuracy varies by a factor of twenty between providers, and price
+does not predict it.** Median relative error against the reference ranges from
+1.3% to 27%. The most expensive provider tested, PeopleDataLabs at $0.14 per
+result, is near the bottom at 24.7%. A provider costing a fifth as much,
+limadata at $0.028, is four times more accurate at 6.2%.
+
+**Deepline's own native enricher was the most accurate third-party option.**
+`enrich_company` came in at 1.3% median error, roughly nineteen times closer to
+the reference than PeopleDataLabs. Its cost per correct answer is higher
+($0.113) because it charges $0.098 per call, but on pure accuracy the platform's
+built-in tool beat every branded data vendor sold alongside it.
+
+**Two providers cluster at the bottom together.** PeopleDataLabs (24.7%) and
+leadmagic (27.0%) both resolved identity perfectly and then missed the headcount
+by roughly a quarter. Whatever they are doing to derive a number, they appear to
+be doing something similar.
 
 **A $0.007 web-search call resolved company identity perfectly.** Exa, given only
 a domain, returned the correct LinkedIn company page for all 100 companies across

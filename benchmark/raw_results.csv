@@ -499,3 +499,303 @@ tailscale.com,mid-market,exa_only,,,https://www.linkedin.com/company/tailscale,,
 raycast.com,mid-market,exa_only,,,https://www.linkedin.com/company/raycastapp,,0
 warp.dev,mid-market,exa_only,,,https://www.linkedin.com/company/warpdotdev,,0
 intercom.com,hard,exa_only,,,https://www.linkedin.com/company/intercom,,0
+stripe.com,well-known,enrich_company,17396,10001+,https://www.linkedin.com/company/stripe/,,1505
+stripe.com,well-known,limadata,15270,"5,001-10,000 employees",https://linkedin.com/company/stripe,,5727
+stripe.com,well-known,leadmagic,11549,,https://www.linkedin.com/company/stripe,,2086
+shopify.com,well-known,enrich_company,29297,10001+,https://www.linkedin.com/company/shopify/,,1766
+shopify.com,well-known,limadata,27980,"10,001+ employees",https://linkedin.com/company/shopify,,4216
+shopify.com,well-known,leadmagic,22045,,https://www.linkedin.com/company/shopify,,2422
+atlassian.com,well-known,enrich_company,21091,10001+,https://www.linkedin.com/company/atlassian/,,1872
+atlassian.com,well-known,limadata,21265,"10,001+ employees",https://linkedin.com/company/atlassian,,6466
+atlassian.com,well-known,leadmagic,16888,,https://www.linkedin.com/company/atlassian,,2234
+datadoghq.com,well-known,enrich_company,11092,10001+,https://www.linkedin.com/company/datadog/,,1496
+datadoghq.com,well-known,limadata,9945,"1,001-5,000 employees",https://linkedin.com/company/datadog,,6768
+datadoghq.com,well-known,leadmagic,7554,,https://www.linkedin.com/company/datadog,,2218
+snowflake.com,well-known,enrich_company,13148,10001+,https://www.linkedin.com/company/snowflake-computing/,,2157
+snowflake.com,well-known,limadata,11073,"5,001-10,000 employees",https://linkedin.com/company/snowflake-computing,,7673
+snowflake.com,well-known,leadmagic,8628,,https://www.linkedin.com/company/snowflake-computing,,2295
+hubspot.com,well-known,enrich_company,12206,10001+,https://www.linkedin.com/company/hubspot/,,2340
+hubspot.com,well-known,limadata,12073,"5,001-10,000 employees",https://linkedin.com/company/hubspot,,7692
+hubspot.com,well-known,leadmagic,9188,,https://www.linkedin.com/company/hubspot,,3203
+twilio.com,well-known,enrich_company,8133,5001-10000,https://www.linkedin.com/company/twilio-inc-/,,1798
+twilio.com,well-known,limadata,6597,"5,001-10,000 employees",https://linkedin.com/company/twilio-inc-,,5401
+twilio.com,well-known,leadmagic,5021,,https://www.linkedin.com/company/twilio-inc-,,2422
+cloudflare.com,well-known,enrich_company,8751,5001-10000,https://www.linkedin.com/company/cloudflare/,,1992
+cloudflare.com,well-known,limadata,6968,"1,001-5,000 employees",https://linkedin.com/company/cloudflare,,6443
+cloudflare.com,well-known,leadmagic,5364,,https://www.linkedin.com/company/cloudflare,,2722
+gitlab.com,well-known,enrich_company,3415,1001-5000,https://www.linkedin.com/company/gitlab-com/,,1894
+gitlab.com,well-known,limadata,,,,,116
+gitlab.com,well-known,leadmagic,2535,,https://www.linkedin.com/company/gitlab-com,,2526
+figma.com,well-known,enrich_company,2803,1001-5000,https://www.linkedin.com/company/figma/,,1373
+figma.com,well-known,limadata,2840,"1,001-5,000 employees",https://linkedin.com/company/figma,,3065
+figma.com,well-known,leadmagic,2131,,https://www.linkedin.com/company/figma,,1692
+notion.so,well-known,enrich_company,,1-10,https://www.linkedin.com/company/notionhq/,,1245
+notion.so,well-known,limadata,12,11-50 employees,https://linkedin.com/company/epicvibe,,1476
+notion.so,well-known,leadmagic,1131,,linkedin.com/company/notionhq,,1982
+airtable.com,well-known,enrich_company,922,501-1000,https://www.linkedin.com/company/airtable/,,1909
+airtable.com,well-known,limadata,931,"501-1,000 employees",https://linkedin.com/company/airtable,,4011
+airtable.com,well-known,leadmagic,739,,https://www.linkedin.com/company/airtable,,2347
+asana.com,well-known,enrich_company,4411,1001-5000,https://www.linkedin.com/company/asana/,,1780
+asana.com,well-known,limadata,4270,"1,001-5,000 employees",https://linkedin.com/company/asana,,5557
+asana.com,well-known,leadmagic,3416,,https://www.linkedin.com/company/asana,,2356
+monday.com,well-known,enrich_company,3897,1001-5000,https://www.linkedin.com/company/mondaydotcom/,,2024
+monday.com,well-known,limadata,3793,"1,001-5,000 employees",https://linkedin.com/company/mondaydotcom,,5010
+monday.com,well-known,leadmagic,3019,,https://www.linkedin.com/company/mondaydotcom,,2730
+canva.com,well-known,enrich_company,17705,10001+,https://www.linkedin.com/company/canva/,,2424
+canva.com,well-known,limadata,15698,"1,001-5,000 employees",https://linkedin.com/company/canva,,4792
+canva.com,well-known,leadmagic,11586,,https://www.linkedin.com/company/canva,,2619
+databricks.com,well-known,enrich_company,15993,10001+,https://www.linkedin.com/company/databricks/,,1890
+databricks.com,well-known,limadata,15074,"5,001-10,000 employees",https://linkedin.com/company/databricks,,7028
+databricks.com,well-known,leadmagic,11260,,https://www.linkedin.com/company/databricks,,2683
+okta.com,well-known,enrich_company,7684,5001-10000,https://www.linkedin.com/company/okta-inc-/,,1305
+okta.com,well-known,limadata,7384,"5,001-10,000 employees",https://linkedin.com/company/okta-inc-,,5231
+okta.com,well-known,leadmagic,5578,,https://www.linkedin.com/company/okta-inc-,,1954
+docusign.com,well-known,enrich_company,7336,5001-10000,https://www.linkedin.com/company/docusign/,,1396
+docusign.com,well-known,limadata,8382,"5,001-10,000 employees",https://linkedin.com/company/docusign,,6935
+docusign.com,well-known,leadmagic,6600,,https://www.linkedin.com/company/docusign,,2774
+zendesk.com,well-known,enrich_company,5866,5001-10000,https://www.linkedin.com/company/zendesk/,,1378
+zendesk.com,well-known,limadata,6994,"5,001-10,000 employees",https://linkedin.com/company/zendesk,,6319
+zendesk.com,well-known,leadmagic,5418,,https://www.linkedin.com/company/zendesk,,2542
+dropbox.com,well-known,enrich_company,4250,1001-5000,https://www.linkedin.com/company/dropbox/,,1820
+dropbox.com,well-known,limadata,4013,"1,001-5,000 employees",https://linkedin.com/company/dropbox,,4266
+dropbox.com,well-known,leadmagic,3227,,https://www.linkedin.com/company/dropbox,,2569
+squarespace.com,well-known,enrich_company,,,,Bad domain. 'squarespace.com' is a provider domain (like 'myshopify.com').,0
+squarespace.com,well-known,limadata,2085,"1,001-5,000 employees",https://linkedin.com/company/squarespace,,4200
+squarespace.com,well-known,leadmagic,1321,,linkedin.com/company/squarespace,,1992
+klaviyo.com,well-known,enrich_company,2983,1001-5000,https://www.linkedin.com/company/klaviyo/,,1664
+klaviyo.com,well-known,limadata,2837,"1,001-5,000 employees",https://linkedin.com/company/klaviyo,,3988
+klaviyo.com,well-known,leadmagic,2269,,https://www.linkedin.com/company/klaviyo,,2155
+zapier.com,well-known,enrich_company,1479,1001-5000,https://www.linkedin.com/company/zapier/,,1226
+zapier.com,well-known,limadata,1484,"501-1,000 employees",https://linkedin.com/company/zapier,,3310
+zapier.com,well-known,leadmagic,1118,,https://www.linkedin.com/company/zapier,,1726
+vercel.com,well-known,enrich_company,976,501-1000,https://www.linkedin.com/company/vercel/,,1255
+vercel.com,well-known,limadata,985,"501-1,000 employees",https://linkedin.com/company/vercel,,2926
+vercel.com,well-known,leadmagic,692,,https://www.linkedin.com/company/vercel,,2066
+clay.com,mid-market,enrich_company,1423,1001-5000,https://www.linkedin.com/company/grow-with-clay/,,1189
+clay.com,mid-market,limadata,1471,201-500 employees,https://linkedin.com/company/grow-with-clay,,1383
+clay.com,mid-market,leadmagic,909,,https://www.linkedin.com/company/grow-with-clay,,1660
+apollo.io,mid-market,enrich_company,648,501-1000,https://www.linkedin.com/company/apolloio/,,1726
+apollo.io,mid-market,limadata,8,"501-1,000 employees",https://linkedin.com/company/apolloio,,4445
+apollo.io,mid-market,leadmagic,1072,,https://www.linkedin.com/company/apolloio,,2436
+outreach.io,mid-market,enrich_company,,1-10,https://www.linkedin.com/company/outreach-saas/,,1256
+outreach.io,mid-market,limadata,1,2-10 employees,https://linkedin.com/company/canopyio,,1744
+outreach.io,mid-market,leadmagic,1140,,https://www.linkedin.com/company/outreach-saas,,2852
+salesloft.com,mid-market,enrich_company,1099,1001-5000,https://www.linkedin.com/company/salesloft/,,1731
+salesloft.com,mid-market,limadata,1097,"501-1,000 employees",https://linkedin.com/company/salesloft,,4283
+salesloft.com,mid-market,leadmagic,874,,https://www.linkedin.com/company/salesloft,,2670
+gong.io,mid-market,enrich_company,2601,1001-5000,https://www.linkedin.com/company/gong-io/,,1401
+gong.io,mid-market,limadata,2523,"1,001-5,000 employees",https://linkedin.com/company/gong-io,,4144
+gong.io,mid-market,leadmagic,1931,,https://www.linkedin.com/company/gong-io,,1958
+lattice.com,mid-market,enrich_company,525,501-1000,https://www.linkedin.com/company/lattice-hq/,,1501
+lattice.com,mid-market,limadata,531,"501-1,000 employees",https://linkedin.com/company/lattice-hq,,4039
+lattice.com,mid-market,leadmagic,424,,https://www.linkedin.com/company/lattice-hq,,2175
+cultureamp.com,mid-market,enrich_company,930,501-1000,https://www.linkedin.com/company/cultureamp/,,1951
+cultureamp.com,mid-market,limadata,954,"501-1,000 employees",https://linkedin.com/company/cultureamp,,4834
+cultureamp.com,mid-market,leadmagic,763,,https://www.linkedin.com/company/cultureamp,,2445
+gusto.com,mid-market,enrich_company,4467,1001-5000,https://www.linkedin.com/company/gustohq/,,1547
+gusto.com,mid-market,limadata,4377,"1,001-5,000 employees",https://linkedin.com/company/gustohq,,3859
+gusto.com,mid-market,leadmagic,3438,,https://www.linkedin.com/company/gustohq,,2036
+rippling.com,mid-market,enrich_company,7707,5001-10000,https://www.linkedin.com/company/rippling/,,2273
+rippling.com,mid-market,limadata,7310,"1,001-5,000 employees",https://linkedin.com/company/rippling,,4673
+rippling.com,mid-market,leadmagic,5617,,https://www.linkedin.com/company/rippling,,2741
+deel.com,mid-market,enrich_company,9700,5001-10000,https://www.linkedin.com/company/deel/,,1558
+deel.com,mid-market,limadata,9499,"5,001-10,000 employees",https://linkedin.com/company/deel,,3681
+deel.com,mid-market,leadmagic,7083,,https://www.linkedin.com/company/deel,,2166
+pipedrive.com,mid-market,enrich_company,1051,1001-5000,https://www.linkedin.com/company/pipedrive/,,1597
+pipedrive.com,mid-market,limadata,1045,"501-1,000 employees",https://linkedin.com/company/pipedrive,,5014
+pipedrive.com,mid-market,leadmagic,799,,https://www.linkedin.com/company/pipedrive,,2124
+close.com,mid-market,enrich_company,216,201-500,https://www.linkedin.com/company/close-crm/,,2588
+close.com,mid-market,limadata,217,51-200 employees,https://linkedin.com/company/close-crm,,4733
+close.com,mid-market,leadmagic,161,,https://www.linkedin.com/company/close-crm,,3629
+copper.com,mid-market,enrich_company,312,201-500,https://www.linkedin.com/company/copper-inc/,,1493
+copper.com,mid-market,limadata,298,51-200 employees,https://linkedin.com/company/copper-inc,,3572
+copper.com,mid-market,leadmagic,241,,https://www.linkedin.com/company/copper-inc,,2305
+freshworks.com,mid-market,enrich_company,7608,5001-10000,https://www.linkedin.com/company/freshworks-inc/,,1693
+freshworks.com,mid-market,limadata,,,,,116
+freshworks.com,mid-market,leadmagic,5654,,https://www.linkedin.com/company/freshworks-inc,,2394
+helpscout.com,mid-market,enrich_company,289,201-500,https://www.linkedin.com/company/help-scout/,,2420
+helpscout.com,mid-market,limadata,292,51-200 employees,https://linkedin.com/company/help-scout,,4355
+helpscout.com,mid-market,leadmagic,234,,https://www.linkedin.com/company/help-scout,,2924
+front.com,mid-market,enrich_company,548,501-1000,https://www.linkedin.com/company/fronthq/,,1575
+front.com,mid-market,limadata,531,201-500 employees,https://linkedin.com/company/fronthq,,4025
+front.com,mid-market,leadmagic,406,,https://www.linkedin.com/company/fronthq,,2178
+vidyard.com,mid-market,enrich_company,157,51-200,https://www.linkedin.com/company/vidyard/,,2039
+vidyard.com,mid-market,limadata,167,201-500 employees,https://linkedin.com/company/vidyard,,4481
+vidyard.com,mid-market,leadmagic,128,,https://www.linkedin.com/company/vidyard,,2623
+wistia.com,mid-market,enrich_company,208,201-500,https://www.linkedin.com/company/wistia/,,2520
+wistia.com,mid-market,limadata,207,51-200 employees,https://linkedin.com/company/wistia,,4523
+wistia.com,mid-market,leadmagic,157,,https://www.linkedin.com/company/wistia,,3285
+mux.com,mid-market,enrich_company,168,51-200,https://www.linkedin.com/company/mux/,,1447
+mux.com,mid-market,limadata,159,51-200 employees,https://linkedin.com/company/mux,,3429
+mux.com,mid-market,leadmagic,121,,https://www.linkedin.com/company/mux,,2369
+netlify.com,mid-market,enrich_company,187,51-200,https://www.linkedin.com/company/netlify/,,2325
+netlify.com,mid-market,limadata,178,51-200 employees,https://linkedin.com/company/netlify,,4781
+netlify.com,mid-market,leadmagic,143,,https://www.linkedin.com/company/netlify,,3059
+render.com,mid-market,enrich_company,205,201-500,https://www.linkedin.com/company/renderco/,,1501
+render.com,mid-market,limadata,179,51-200 employees,https://linkedin.com/company/renderco,,2883
+render.com,mid-market,leadmagic,133,,https://www.linkedin.com/company/renderco,,2113
+fly.io,mid-market,enrich_company,54,51-200,https://www.linkedin.com/company/flydotio/,,1233
+fly.io,mid-market,limadata,49,51-200 employees,https://linkedin.com/company/flydotio,,1784
+fly.io,mid-market,leadmagic,40,,https://www.linkedin.com/company/flydotio,,1862
+planetscale.com,mid-market,enrich_company,98,51-200,https://www.linkedin.com/company/planetscale/,,1562
+planetscale.com,mid-market,limadata,95,51-200 employees,https://linkedin.com/company/planetscale,,3198
+planetscale.com,mid-market,leadmagic,66,,https://www.linkedin.com/company/planetscale,,2173
+supabase.com,mid-market,enrich_company,388,201-500,https://www.linkedin.com/company/supabase/,,1309
+supabase.com,mid-market,limadata,292,201-500 employees,https://linkedin.com/company/supabase,,2293
+supabase.com,mid-market,leadmagic,232,,https://www.linkedin.com/company/supabase,,1785
+clickhouse.com,mid-market,enrich_company,623,501-1000,https://www.linkedin.com/company/clickhouseinc/,,1556
+clickhouse.com,mid-market,limadata,567,"501-1,000 employees",https://linkedin.com/company/clickhouseinc,,3300
+clickhouse.com,mid-market,leadmagic,412,,https://www.linkedin.com/company/clickhouseinc,,2270
+cockroachlabs.com,mid-market,enrich_company,735,501-1000,https://www.linkedin.com/company/cockroach-labs/,,1358
+cockroachlabs.com,mid-market,limadata,719,"501-1,000 employees",https://linkedin.com/company/cockroach-labs,,4094
+cockroachlabs.com,mid-market,leadmagic,567,,https://www.linkedin.com/company/cockroach-labs,,2098
+temporal.io,mid-market,enrich_company,133,51-200,https://www.linkedin.com/company/temporal-technologies/,,1323
+temporal.io,mid-market,limadata,412,201-500 employees,https://linkedin.com/company/temporal-technologies,,2913
+temporal.io,mid-market,leadmagic,341,,https://www.linkedin.com/company/temporal-technologies,,2346
+retool.com,mid-market,enrich_company,414,201-500,https://www.linkedin.com/company/tryretool/,,1470
+retool.com,mid-market,limadata,460,201-500 employees,https://linkedin.com/company/tryretool,,4281
+retool.com,mid-market,leadmagic,345,,https://www.linkedin.com/company/tryretool,,2310
+appsmith.com,mid-market,enrich_company,48,11-50,https://www.linkedin.com/company/appsmith/,,1914
+appsmith.com,mid-market,limadata,49,51-200 employees,https://linkedin.com/company/appsmith,,3312
+appsmith.com,mid-market,leadmagic,40,,https://www.linkedin.com/company/appsmith,,2595
+n8n.io,mid-market,enrich_company,1120,1001-5000,https://www.linkedin.com/company/n8n/,,1924
+n8n.io,mid-market,limadata,955,51-200 employees,https://linkedin.com/company/n8n,,3423
+n8n.io,mid-market,leadmagic,684,,https://www.linkedin.com/company/n8n,,2461
+workato.com,mid-market,enrich_company,1432,1001-5000,https://www.linkedin.com/company/workato/,,1668
+workato.com,mid-market,limadata,1400,"1,001-5,000 employees",https://linkedin.com/company/workato,,5051
+workato.com,mid-market,leadmagic,1057,,https://www.linkedin.com/company/workato,,2603
+postman.com,mid-market,enrich_company,3510,1001-5000,https://www.linkedin.com/company/postman-platform/,,1614
+postman.com,mid-market,limadata,3440,"501-1,000 employees",https://linkedin.com/company/postman-platform,,3741
+postman.com,mid-market,leadmagic,2614,,https://www.linkedin.com/company/postman-platform,,2288
+konghq.com,mid-market,enrich_company,1027,1001-5000,https://www.linkedin.com/company/konghq/,,1536
+konghq.com,mid-market,limadata,930,"501-1,000 employees",https://linkedin.com/company/konghq,,4004
+konghq.com,mid-market,leadmagic,754,,https://www.linkedin.com/company/konghq,,2609
+readme.com,mid-market,enrich_company,80,51-200,https://www.linkedin.com/company/readme/,,2741
+readme.com,mid-market,limadata,81,51-200 employees,https://linkedin.com/company/readme,,4536
+readme.com,mid-market,leadmagic,61,,https://www.linkedin.com/company/readme,,3586
+mintlify.com,mid-market,enrich_company,5,1-10,https://www.linkedin.com/company/mintsearch/,,1342
+mintlify.com,mid-market,limadata,75,51-200 employees,https://linkedin.com/company/mintlify,,2334
+mintlify.com,mid-market,leadmagic,47,,https://www.linkedin.com/company/mintlify,,1838
+courier.com,mid-market,enrich_company,1204,1001-5000,https://www.linkedin.com/company/trycourier/,,1439
+courier.com,mid-market,limadata,1137,11-50 employees,https://linkedin.com/company/trycourier,,2997
+courier.com,mid-market,leadmagic,876,,https://www.linkedin.com/company/trycourier,,2188
+knock.app,mid-market,enrich_company,23,11-50,https://www.linkedin.com/company/knocklabs/,,1673
+knock.app,mid-market,limadata,25,11-50 employees,https://linkedin.com/company/knocklabs,,2266
+knock.app,mid-market,leadmagic,20,,https://www.linkedin.com/company/knocklabs,,1789
+resend.com,mid-market,enrich_company,75,51-200,https://www.linkedin.com/company/resend/,,1669
+resend.com,mid-market,limadata,44,2-10 employees,https://linkedin.com/company/resend,,1797
+resend.com,mid-market,leadmagic,52,,https://www.linkedin.com/company/resend,,1666
+customer.io,mid-market,enrich_company,567,501-1000,https://www.linkedin.com/company/customer-io/,,2132
+customer.io,mid-market,limadata,500,201-500 employees,https://linkedin.com/company/customer-io,,3794
+customer.io,mid-market,leadmagic,393,,https://www.linkedin.com/company/customer-io,,2758
+braze.com,mid-market,enrich_company,2316,1001-5000,https://www.linkedin.com/company/braze/,,2182
+braze.com,mid-market,limadata,2275,"1,001-5,000 employees",https://linkedin.com/company/braze,,5962
+braze.com,mid-market,leadmagic,1758,,https://www.linkedin.com/company/braze,,3038
+iterable.com,mid-market,enrich_company,869,501-1000,https://www.linkedin.com/company/iterable/,,2697
+iterable.com,mid-market,limadata,858,"501-1,000 employees",https://www.linkedin.com/company/iterable/jobs/,,5436
+iterable.com,mid-market,leadmagic,639,,https://www.linkedin.com/company/iterable,,3553
+amplitude.com,mid-market,enrich_company,1000,501-1000,https://www.linkedin.com/company/amplitude-analytics/,,1403
+amplitude.com,mid-market,limadata,1008,"501-1,000 employees",https://linkedin.com/company/amplitude-analytics,,4598
+amplitude.com,mid-market,leadmagic,784,,https://www.linkedin.com/company/amplitude-analytics,,2336
+mixpanel.com,mid-market,enrich_company,722,501-1000,https://www.linkedin.com/company/mixpanel-inc-/,,1668
+mixpanel.com,mid-market,limadata,554,201-500 employees,https://linkedin.com/company/mixpanel-inc-,,4525
+mixpanel.com,mid-market,leadmagic,474,,https://www.linkedin.com/company/mixpanel-inc-,,2404
+launchdarkly.com,mid-market,enrich_company,644,501-1000,https://www.linkedin.com/company/launchdarkly/,,2082
+launchdarkly.com,mid-market,limadata,611,"501-1,000 employees",https://linkedin.com/company/launchdarkly,,3912
+launchdarkly.com,mid-market,leadmagic,496,,https://www.linkedin.com/company/launchdarkly,,3063
+gocardless.com,hard,enrich_company,852,501-1000,https://www.linkedin.com/company/gocardless/,,1531
+gocardless.com,hard,limadata,834,"501-1,000 employees",https://linkedin.com/company/gocardless,,3822
+gocardless.com,hard,leadmagic,664,,https://www.linkedin.com/company/gocardless,,2156
+qonto.com,hard,enrich_company,2450,1001-5000,https://www.linkedin.com/company/qonto/,,2140
+qonto.com,hard,limadata,2364,"1,001-5,000 employees",https://linkedin.com/company/qonto,,4332
+qonto.com,hard,leadmagic,1712,,https://www.linkedin.com/company/qonto,,2473
+pennylane.com,hard,enrich_company,1158,1001-5000,https://www.linkedin.com/company/pennylaneaccounting/,,2067
+pennylane.com,hard,limadata,900,"501-1,000 employees",https://linkedin.com/company/pennylaneaccounting,,3728
+pennylane.com,hard,leadmagic,823,,https://www.linkedin.com/company/pennylaneaccounting,,2636
+personio.com,hard,enrich_company,2438,1001-5000,https://www.linkedin.com/company/personio/,,2483
+personio.com,hard,limadata,1815,"1,001-5,000 employees",https://linkedin.com/company/personio,,4363
+personio.com,hard,leadmagic,1391,,https://www.linkedin.com/company/personio,,2780
+sennder.com,hard,enrich_company,1033,1001-5000,https://www.linkedin.com/company/sennder/,,2015
+sennder.com,hard,limadata,1072,"1,001-5,000 employees",https://linkedin.com/company/sennder,,5013
+sennder.com,hard,leadmagic,828,,https://www.linkedin.com/company/sennder,,2182
+forto.com,hard,enrich_company,490,201-500,https://www.linkedin.com/company/fortocompany/,,2008
+forto.com,hard,limadata,495,"501-1,000 employees",https://linkedin.com/company/fortocompany,,5582
+forto.com,hard,leadmagic,385,,https://www.linkedin.com/company/fortocompany,,2435
+mambu.com,hard,enrich_company,779,501-1000,https://www.linkedin.com/company/mambu/,,1957
+mambu.com,hard,limadata,775,"501-1,000 employees",https://linkedin.com/company/mambu,,3301
+mambu.com,hard,leadmagic,583,,https://www.linkedin.com/company/mambu,,2516
+backbase.com,hard,enrich_company,2105,1001-5000,https://www.linkedin.com/company/backbase/,,1792
+backbase.com,hard,limadata,2140,"1,001-5,000 employees",https://linkedin.com/company/backbase,,5006
+backbase.com,hard,leadmagic,1693,,https://www.linkedin.com/company/backbase,,2469
+wise.com,hard,enrich_company,2919,1001-5000,https://www.linkedin.com/company/wiseaccount/,,1354
+wise.com,hard,limadata,9936,"5,001-10,000 employees",https://linkedin.com/company/wiseaccount,,5177
+wise.com,hard,leadmagic,7857,,https://www.linkedin.com/company/wiseaccount,,3115
+checkout.com,hard,enrich_company,2349,1001-5000,https://www.linkedin.com/company/checkout/,,1892
+checkout.com,hard,limadata,2275,"1,001-5,000 employees",https://linkedin.com/company/checkout,,5122
+checkout.com,hard,leadmagic,1757,,https://www.linkedin.com/company/checkout,,2051
+starlingbank.com,hard,enrich_company,2700,1001-5000,https://www.linkedin.com/company/starlingbank/,,1390
+starlingbank.com,hard,limadata,2912,"1,001-5,000 employees",https://linkedin.com/company/starlingbank,,4689
+starlingbank.com,hard,leadmagic,2339,,https://www.linkedin.com/company/starlingbank,,2866
+tide.co,hard,enrich_company,3384,1001-5000,https://www.linkedin.com/company/tide-banking/,,2167
+tide.co,hard,limadata,3279,"1,001-5,000 employees",https://linkedin.com/company/tide-banking,,4408
+tide.co,hard,leadmagic,2509,,https://www.linkedin.com/company/tide-banking,,2372
+bolt.eu,hard,enrich_company,15760,10001+,https://www.linkedin.com/company/bolt-eu/,,1649
+bolt.eu,hard,limadata,14382,"1,001-5,000 employees",https://linkedin.com/company/bolt-eu,,5688
+bolt.eu,hard,leadmagic,11667,,https://www.linkedin.com/company/bolt-eu,,1850
+bird.com,hard,enrich_company,3,1-10,https://www.linkedin.com/company/blue-bird-corporation/,,1379
+bird.com,hard,limadata,319,"501-1,000 employees",https://linkedin.com/company/birdhq,,3537
+bird.com,hard,leadmagic,256,,https://www.linkedin.com/company/birdhq,,1464
+sinch.com,hard,enrich_company,4396,1001-5000,https://www.linkedin.com/company/sinch/,,1926
+sinch.com,hard,limadata,4335,"1,001-5,000 employees",https://linkedin.com/company/sinch,,4333
+sinch.com,hard,leadmagic,3344,,https://www.linkedin.com/company/sinch,,2154
+segment.com,hard,enrich_company,8133,5001-10000,https://www.linkedin.com/company/twilio-inc-/,,1799
+segment.com,hard,limadata,240,"501-1,000 employees",https://linkedin.com/company/segment-io,,4006
+segment.com,hard,leadmagic,395,,https://www.linkedin.com/company/segment-io,,2248
+mailchimp.com,hard,enrich_company,800,501-1000,https://www.linkedin.com/company/mailchimp/,,1383
+mailchimp.com,hard,limadata,1504,"1,001-5,000 employees",https://linkedin.com/company/intuitmailchimp,,3760
+mailchimp.com,hard,leadmagic,1200,,https://www.linkedin.com/company/intuitmailchimp,,1947
+mulesoft.com,hard,enrich_company,1113,1001-5000,https://www.linkedin.com/company/mulesoft/,,1298
+mulesoft.com,hard,limadata,1337,"1,001-5,000 employees",https://linkedin.com/company/mulesoft,,5526
+mulesoft.com,hard,leadmagic,1027,,https://www.linkedin.com/company/mulesoft,,1839
+tableau.com,hard,enrich_company,1772,1001-5000,https://www.linkedin.com/company/tableau-software/,,1260
+tableau.com,hard,limadata,2209,"1,001-5,000 employees",https://linkedin.com/company/tableau-software,,4799
+tableau.com,hard,leadmagic,1664,,https://www.linkedin.com/company/tableau-software,,1833
+slack.com,hard,enrich_company,2635,1001-5000,https://www.linkedin.com/company/tiny-spec-inc/,,2081
+slack.com,hard,limadata,2956,"1,001-5,000 employees",https://linkedin.com/company/tiny-spec-inc,,4104
+slack.com,hard,leadmagic,2349,,https://www.linkedin.com/company/tiny-spec-inc,,2656
+github.com,hard,enrich_company,6548,5001-10000,https://www.linkedin.com/company/github/,,1566
+github.com,hard,limadata,3428,,https://linkedin.com/company/personal-projects2,,1132
+github.com,hard,leadmagic,4781,,https://www.linkedin.com/company/github,,2105
+chorus.ai,hard,enrich_company,75,51-200,https://www.linkedin.com/company/chorus.ai/,,1355
+chorus.ai,hard,limadata,1,11-50 employees,https://linkedin.com/company/affectlayer-inc.,,1180
+chorus.ai,hard,leadmagic,,,linkedin.com/company/chorus.ai,,1667
+looker.com,hard,enrich_company,276,201-500,https://www.linkedin.com/company/looker/,,1271
+looker.com,hard,limadata,261,"501-1,000 employees",https://linkedin.com/company/looker,,2242
+looker.com,hard,leadmagic,,,,,1010
+optimizely.com,hard,enrich_company,1682,1001-5000,https://www.linkedin.com/company/optimizely/,,1666
+optimizely.com,hard,limadata,1643,"1,001-5,000 employees",https://linkedin.com/company/optimizely,,6678
+optimizely.com,hard,leadmagic,1251,,https://www.linkedin.com/company/optimizely,,2683
+mongodb.com,well-known,enrich_company,8039,5001-10000,https://www.linkedin.com/company/mongodbinc/,,1884
+mongodb.com,well-known,limadata,7654,"5,001-10,000 employees",https://linkedin.com/company/mongodbinc,,8958
+mongodb.com,well-known,leadmagic,6152,,https://www.linkedin.com/company/mongodbinc,,2432
+posthog.com,mid-market,enrich_company,211,201-500,https://www.linkedin.com/company/posthog/,,2077
+posthog.com,mid-market,limadata,178,51-200 employees,https://linkedin.com/company/posthog,,3511
+posthog.com,mid-market,leadmagic,141,,https://www.linkedin.com/company/posthog,,2546
+linear.app,mid-market,enrich_company,271,201-500,https://www.linkedin.com/company/linearapp/,,1752
+linear.app,mid-market,limadata,212,51-200 employees,https://linkedin.com/company/linearapp,,2946
+linear.app,mid-market,leadmagic,160,,https://www.linkedin.com/company/linearapp,,2383
+cal.com,mid-market,enrich_company,44,11-50,https://www.linkedin.com/company/cal-com/,,2328
+cal.com,mid-market,limadata,42,11-50 employees,https://linkedin.com/company/cal-com,,3558
+cal.com,mid-market,leadmagic,32,,https://www.linkedin.com/company/cal-com,,3082
+tailscale.com,mid-market,enrich_company,343,201-500,https://www.linkedin.com/company/tailscale/,,1322
+tailscale.com,mid-market,limadata,319,201-500 employees,https://linkedin.com/company/tailscale,,3168
+tailscale.com,mid-market,leadmagic,240,,https://www.linkedin.com/company/tailscale,,2063
+raycast.com,mid-market,enrich_company,45,11-50,https://www.linkedin.com/company/raycastapp/,,1162
+raycast.com,mid-market,limadata,45,11-50 employees,https://linkedin.com/company/raycastapp,,2187
+raycast.com,mid-market,leadmagic,35,,https://www.linkedin.com/company/raycastapp,,1678
+warp.dev,mid-market,enrich_company,102,51-200,https://www.linkedin.com/company/warpdotdev/,,1546
+warp.dev,mid-market,limadata,90,11-50 employees,https://linkedin.com/company/warpdotdev,,2521
+warp.dev,mid-market,leadmagic,70,,https://www.linkedin.com/company/warpdotdev,,2085
+intercom.com,hard,enrich_company,1099,1001-5000,https://www.linkedin.com/company/intercom/,,1513
+intercom.com,hard,limadata,1322,"1,001-5,000 employees",https://linkedin.com/company/intercom,,4572
+intercom.com,hard,leadmagic,1587,,https://www.linkedin.com/company/intercom,,2335
