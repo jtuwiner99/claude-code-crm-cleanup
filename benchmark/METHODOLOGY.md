@@ -99,6 +99,32 @@ committed. The aggregate spread may be inspected before review, since disagreeme
 counts and coverage rates reveal nothing about which value is correct for any
 particular company.
 
+## Two dimensions, scored separately
+
+**Amended 2026-07-27, before any ground truth existed.** The original method scored one
+thing: is the headcount right. That conflates two different failures. A provider can
+find the wrong company and report its headcount accurately, or find the right company
+and miscount it. Those have different causes and different fixes, and averaging them
+hides both.
+
+Every provider is therefore scored on two independent dimensions:
+
+1. **Identity.** Did it resolve the domain to the correct LinkedIn company page? Scored
+   against the correct URL, normalized (lowercased, `www.` and trailing slash removed).
+2. **Count.** Is the headcount right, by the band rule below?
+
+Count accuracy is reported twice: over all rows, and over only the rows where identity
+was correct. The second number is the provider's counting ability with identity failures
+removed. The gap between them is how much of its error is really a matching problem.
+
+A provider that returns no LinkedIn URL is not penalized on identity, it is recorded as
+`no-url` and excluded from the identity denominator, because some providers do not
+claim to do URL resolution at all. Excluding them is stated here rather than decided
+later.
+
+This amendment is recorded in its own commit, before ground truth exists, so it cannot
+have been chosen to flatter a result nobody has seen yet.
+
 ## Scoring
 
 Headcount is not a point value: a company with 480 employees may honestly report 500.
