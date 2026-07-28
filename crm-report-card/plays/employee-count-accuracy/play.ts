@@ -9,7 +9,9 @@
 // Chain: domain -> LinkedIn company URL (icypeas_find_company_url) -> ONE
 // batched scrape of every round-1 URL (apify_run_actor_sync, HarvestAPI's
 // linkedin-company actor) -> identity check (deterministic registrable-domain
-// match first, ai_inference on disagreement) -> verified employee count.
+// match, GATED by a name-corroboration guard, then ai_inference on
+// disagreement or on a website match the name does not corroborate) ->
+// verified employee count.
 //
 // FAILURE-TRIGGERED two-round waterfall (2026-07-28). Icypeas alone resolves
 // the right company on ~92% of rows (first-hit accuracy measured at 91.9%
@@ -22,12 +24,21 @@
 // round 1 already succeeded would pay for 100 Exa calls to rescue roughly 8;
 // this only pays for the ~8.
 //
-// This does NOT rescue a row that passes round 1's deterministic check
-// against the WRONG company (a confidently-wrong website match): round 1
-// only flags a row for round 2 when its OWN check fails, and a wrong website
-// match does not fail that check. That is a known, accepted gap of this
-// failure-triggered shape versus resolving both candidates up front; see
-// play README / benchmark write-up for the tradeoff.
+// NAME CORROBORATION GUARD (2026-07-28). A website match alone answers "does
+// this LinkedIn page claim this website," not "is this the right company" --
+// a parent and its regional pages, or an old legal entity that migrated its
+// domain forward, can all legitimately claim the same website (measured:
+// intercom.com -> intercom-latinamerica, chorus.ai -> affectlayer-inc,
+// clay.com -> grow-with-clay, all website-matched, all wrong, none of them
+// failing round 1's own check so round 2 never fired). checkIdentity now
+// requires the LinkedIn slug/name to actually carry the domain's brand
+// before the website match is trusted; a match whose name does not
+// corroborate is escalated to ai_inference rather than auto-accepted or
+// silently shipped wrong. See nameCorroboratesDomain in the pure-helpers
+// block. Deliberately NOT applied by running ai_inference on every row:
+// the verifier has its own measured false-refusal (outreach.io, confirmed
+// correct by URL ground truth and two independent providers, still
+// rejected), so the escalation stays narrow to keep clean rows away from it.
 //
 // Five phases, because both scrapes are batched and a per-row call would
 // spawn one Apify actor run per company, which is explicitly not wanted:
@@ -150,6 +161,101 @@ function formatRange(range: any): string {
   return `${start}-${end}`;
 }
 
+// The bare brand label of a domain: "clay.com" -> "clay", "example.co.uk" ->
+// "example". Built on registrableDomain so a two-part public suffix still
+// leaves just the brand, not the suffix's first label.
+function brandLabel(domain: any): string {
+  const reg = registrableDomain(domain);
+  if (!reg) return '';
+  return reg.split('.')[0];
+}
+
+// The slug segment of a LinkedIn company URL: ".../company/intercom-latinamerica/..."
+// -> "intercom-latinamerica". Empty when the URL does not contain that path.
+function linkedInSlug(url: any): string {
+  const text = String(url || '').trim().toLowerCase();
+  if (!text) return '';
+  const parts = text.split('linkedin.com/company/');
+  if (parts.length < 2) return '';
+  let rest = parts[1];
+  rest = rest.split('/')[0];
+  rest = rest.split('?')[0];
+  return rest;
+}
+
+// Split on the delimiters a domain label or LinkedIn slug actually uses
+// (hyphen, underscore, dot, space), lowercase, drop empty pieces. Chained
+// split/join instead of a regex or delimiter array; restricted plays lib
+// only forbids .indexOf/.charAt/encodeURIComponent, not this.
+function tokenize(value: any): string[] {
+  let text = String(value || '').trim().toLowerCase();
+  if (!text) return [];
+  text = text.split('-').join(' ').split('_').join(' ').split('.').join(' ');
+  const pieces = text.split(' ');
+  const tokens: string[] = [];
+  for (const piece of pieces) {
+    if (piece) tokens.push(piece);
+  }
+  return tokens;
+}
+
+function tokenInList(token: string, list: string[]): boolean {
+  for (const item of list) {
+    if (item === token) return true;
+  }
+  return false;
+}
+
+// Legal-entity suffixes that show up on plenty of genuinely-correct LinkedIn
+// pages ("acme-inc" for domain "acme.com"). Filtered out of the "extra
+// token" count below so spelling out a corporate suffix does not by itself
+// trigger an escalation. This is NOT a list of things that excuse a
+// mismatch -- an unlisted extra token (a region qualifier, a rebrand
+// fragment, an unrelated word) still fails corroboration.
+const BENIGN_LEGAL_SUFFIXES = [
+  'inc', 'incorporated', 'llc', 'ltd', 'limited', 'corp', 'corporation',
+  'co', 'group', 'holding', 'holdings', 'gmbh', 'plc',
+];
+
+// NAME CORROBORATION GUARD. The website-match fast path answers "does this
+// LinkedIn page claim this website," which several different pages can
+// legitimately claim at once: a parent and its regional pages, or an old
+// legal entity whose domain migrated forward with it. This asks the
+// narrower question the fast path skips: does the LinkedIn page's own
+// name/slug actually carry the domain's brand, with nothing else riding
+// along that would explain a DIFFERENT entity --
+//   - a region ("intercom.com" -> "intercom-latinamerica")
+//   - a former legal name ("chorus.ai" -> "affectlayer-inc", zero shared token)
+//   - an unrelated rebrand fragment ("clay.com" -> "grow-with-clay")
+//
+// Returns true (corroborates, fast path stands) only when the brand token
+// is present AND every other token is either absent or a benign legal
+// suffix. Returns false -- caller escalates to ai_inference instead of
+// auto-accepting -- when the brand token is missing entirely, or when an
+// unexplained extra token rides along with it.
+function nameCorroboratesDomain(domain: any, company: any, linkedinUrl: any): boolean {
+  const brandTokens = tokenize(brandLabel(domain));
+  if (brandTokens.length === 0) return true; // nothing to check the name against
+
+  let candidateTokens = tokenize(linkedInSlug(linkedinUrl));
+  if (candidateTokens.length === 0) {
+    candidateTokens = tokenize(company && company.name);
+  }
+  if (candidateTokens.length === 0) return true; // nothing to corroborate or refute with
+
+  let overlapFound = false;
+  const extraTokens: string[] = [];
+  for (const token of candidateTokens) {
+    if (tokenInList(token, brandTokens)) {
+      overlapFound = true;
+    } else if (!tokenInList(token, BENIGN_LEGAL_SUFFIXES)) {
+      extraTokens.push(token);
+    }
+  }
+
+  return overlapFound && extraTokens.length === 0;
+}
+
 // --- end pure helpers ---
 
 export default definePlay(
@@ -247,20 +353,32 @@ export default definePlay(
     }
 
     // Identity check, shared by both rounds: deterministic registrable-domain
-    // match first, ai_inference only on disagreement. Returns null when the
-    // candidate does not pass (caller decides the identity_method label).
-    async function checkIdentity(domain: string, company: any): Promise<
-      { verified_employee_count: number | ''; source: string; verified_range: string; matchedByWebsite: boolean } | null
+    // match first, gated by the name-corroboration guard, ai_inference on
+    // disagreement OR on a website match the name does not corroborate.
+    // `path` tells the caller which of the three ways this was decided, so
+    // it can label identity_method precisely instead of collapsing a
+    // name-escalated result into the plain website-match or plain ai labels.
+    async function checkIdentity(domain: string, company: any, linkedinUrl: any): Promise<
+      {
+        verified: boolean;
+        verified_employee_count: number | '';
+        source: string;
+        verified_range: string;
+        path: 'website' | 'website-escalated' | 'ai';
+      }
     > {
       const scrapedDomain = registrableDomain(company.website);
       const storedDomain = registrableDomain(domain);
+      const websiteMatches = Boolean(scrapedDomain && storedDomain && scrapedDomain === storedDomain);
 
       let verifiedIdentity = false;
-      let matchedByWebsite = false;
-      if (scrapedDomain && storedDomain && scrapedDomain === storedDomain) {
+      let path: 'website' | 'website-escalated' | 'ai';
+
+      if (websiteMatches && nameCorroboratesDomain(domain, company, linkedinUrl)) {
         verifiedIdentity = true;
-        matchedByWebsite = true;
+        path = 'website';
       } else {
+        path = websiteMatches ? 'website-escalated' : 'ai';
         try {
           const prompt = `Is the company below the same company that owns the domain "${domain}"? `
             + `Name: ${company.name || 'unknown'}. Website: ${company.website || 'unknown'}. `
@@ -282,13 +400,13 @@ export default definePlay(
         }
       }
 
-      if (!verifiedIdentity) return null;
-      const employeeCount = toInt(company.employeeCount);
+      const employeeCount = verifiedIdentity ? toInt(company.employeeCount) : null;
       return {
-        verified_employee_count: employeeCount || '',
-        source: employeeCount ? 'harvestapi via apify' : '',
-        verified_range: formatRange(company.employeeCountRange),
-        matchedByWebsite,
+        verified: verifiedIdentity,
+        verified_employee_count: verifiedIdentity ? (employeeCount || '') : '',
+        source: verifiedIdentity && employeeCount ? 'harvestapi via apify' : '',
+        verified_range: verifiedIdentity ? formatRange(company.employeeCountRange) : '',
+        path,
       };
     }
 
@@ -311,16 +429,22 @@ export default definePlay(
           return { passed: false, verified_employee_count: '', source: '', verified_range: '', identity_method: 'not-scraped' };
         }
 
-        const match = await checkIdentity(domain, company);
-        if (!match) {
-          return { passed: false, verified_employee_count: '', source: '', verified_range: '', identity_method: 'ai-rejected' };
+        const match = await checkIdentity(domain, company, icypeasUrl);
+        if (!match.verified) {
+          return {
+            passed: false, verified_employee_count: '', source: '', verified_range: '',
+            identity_method: match.path === 'website-escalated' ? 'website-match-name-escalated:ai-rejected' : 'ai-rejected',
+          };
         }
         return {
           passed: true,
           verified_employee_count: match.verified_employee_count,
           source: match.source,
           verified_range: match.verified_range,
-          identity_method: match.matchedByWebsite ? 'website-match:icypeas' : 'ai-verified:icypeas',
+          identity_method:
+            match.path === 'website' ? 'website-match:icypeas'
+            : match.path === 'website-escalated' ? 'website-match-name-escalated:ai-verified:icypeas'
+            : 'ai-verified:icypeas',
         };
       })
       .run({ key: 'record_id' });
@@ -450,15 +574,21 @@ export default definePlay(
             return { verified_employee_count: '', source: '', verified_range: '', identity_method: 'ai-rejected' };
           }
 
-          const match = await checkIdentity(domain, company);
-          if (!match) {
-            return { verified_employee_count: '', source: '', verified_range: '', identity_method: 'ai-rejected' };
+          const match = await checkIdentity(domain, company, exaUrl);
+          if (!match.verified) {
+            return {
+              verified_employee_count: '', source: '', verified_range: '',
+              identity_method: match.path === 'website-escalated' ? 'website-match-name-escalated:ai-rejected' : 'ai-rejected',
+            };
           }
           return {
             verified_employee_count: match.verified_employee_count,
             source: match.source,
             verified_range: match.verified_range,
-            identity_method: match.matchedByWebsite ? 'website-match:exa' : 'ai-verified:exa',
+            identity_method:
+              match.path === 'website' ? 'website-match:exa'
+              : match.path === 'website-escalated' ? 'website-match-name-escalated:ai-verified:exa'
+              : 'ai-verified:exa',
           };
         })
         .run({ key: 'record_id' });
