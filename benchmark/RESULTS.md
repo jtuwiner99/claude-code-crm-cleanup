@@ -7,22 +7,50 @@ document is where that is dealt with rather than hidden.
 
 Reproduce any number here with `python3 benchmark/score.py`.
 
-## Headline
+## Headline: providers that answer "how many people work here"
 
-| Contestant | Answered | Right company | Band correct | (lenient rule) | Median error | Cost per correct |
+These are the products a buyer can actually purchase to get a headcount from a
+domain.
+
+| Provider | Answered | Right company | Band correct | (lenient rule) | Median error | Cost per correct |
 |---|---|---|---|---|---|---|
-| **Sculpted play** | 99/100 | **100.0%** | **100.0%** | 100.0% | 0.0% | **$0.010** |
-| PeopleDataLabs | 100/100 | **100.0%** | 67.7% | 99.0% | **24.7%** | $0.209 |
+| **Sculpted play** | 99/100 | 100.0% | **100.0%** | 100.0% | 0.0% | **$0.010** |
+| PeopleDataLabs | 100/100 | 100.0% | 67.7% | 99.0% | **24.7%** | $0.209 |
 | Crustdata | 99/100 | 89.9% | 55.6% | 86.9% | band only | $0.073 |
-| Datagma | 0/100 | n/a | 0.0% | 0.0% | n/a | n/a |
-| Exa (resolver only) | n/a | **100.0%** | n/a | n/a | n/a | n/a |
-| HarvestAPI search (resolver only) | 75/100 | 98.7% | 74.7% | 75.8% | 0.0% | n/a |
+| Datagma | **0/100** | n/a | n/a | n/a | n/a | n/a |
 
 **Band correct** means the answer lands in the same size band as the reference.
 **(lenient rule)** is the original rule, which also accepted an adjacent band; it
-is published permanently because dropping it was a change made after results were
-visible. **Median error** is the median relative distance between a provider's
-exact headcount and the reference.
+is kept because dropping it was a change made after results were visible.
+**Median error** is the median relative distance between a provider's exact
+headcount and the reference.
+
+Datagma is scored `n/a` rather than 0% on purpose. It never returned a value, so
+there is nothing to be right or wrong about; scoring it as 0% accurate would imply
+it answered and answered badly. What it did is described under Findings.
+
+## The resolver question, separately
+
+Getting a headcount from a domain is two jobs: find the company's LinkedIn page,
+then read the number off it. The table above measures both together. This one
+measures only the first, and it exists because it decided the architecture of the
+Sculpted play rather than because these are products you would buy on their own.
+
+| Resolver | Answered | Right company | Cost per 100 |
+|---|---|---|---|
+| Exa (`exa_answer`) | 100/100 | **100.0%** | $0.70 |
+| HarvestAPI search | 75/100 | 98.7% | ~$0.10 |
+| Icypeas (`find_company_url`) | 100/100 | 92.0% | $1.50 |
+
+Icypeas is the dedicated domain-to-LinkedIn-URL product, and it was the Sculpted
+play's resolver until this benchmark. A general web-search call resolved 100 of
+100 where the specialist resolved 92, for half the price. There was no company on
+which icypeas was right and Exa wrong. The play was rebuilt on Exa as a direct
+result, and that change is the difference between the play scoring 98% and 100%.
+
+HarvestAPI's search is nearly free because it rides a scrape call the play already
+makes, but it silently returns nothing on a quarter of domains, so it is not
+usable alone.
 
 ## Read the two wins differently
 
