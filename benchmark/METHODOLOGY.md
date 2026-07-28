@@ -63,8 +63,14 @@ this product exists to measure.
 
 ## Ground truth
 
-For each company, an independent agent establishes the true headcount from sources
-**none of the contestants use**, in this priority order:
+**Amended 2026-07-27, before any provider was run.** The original method had an agent
+assemble ground truth with a 20-row hand audit. It is replaced by a stronger one: the
+operator hand-verifies all 100 companies personally. An agent pass audited on 20 rows
+is weaker than 100 rows of human verification, so this raises the bar rather than
+lowering it. The amendment is recorded here, in its own commit, because the
+pre-registration binds us to changing the method in public or not at all.
+
+Truth comes from sources **no contestant uses**, in this priority order:
 
 1. A regulatory filing where one exists (SEC, Companies House, and equivalents).
 2. The company's own public statement: an about page, careers page, or press kit.
@@ -73,16 +79,25 @@ For each company, an independent agent establishes the true headcount from sourc
 **LinkedIn is excluded as a truth source**, since a contestant reads it. Provider
 outputs are excluded, obviously.
 
-Every ground-truth record must carry a citation URL and the date the claim was made.
-A company for which no citable source can be found is marked `no-ground-truth` and is
+Every ground-truth record carries a citation URL and the date the claim was made. A
+company for which no citable source can be found is marked `no-ground-truth` and is
 excluded from accuracy scoring for every provider equally. That exclusion count is
 published, because a benchmark that quietly drops the rows nobody can verify is
 overstating what it measured.
 
-**The judges themselves get audited.** After ground truth is assembled, 20 of the 100
-are re-verified by hand. If hand-checking disagrees with the agent on more than 2 of
-20, the ground-truth pass is thrown out and redone with a tightened prompt, and that
-fact is reported.
+### Anchoring control
+
+Providers are run before ground truth is established, so that the spread across
+providers can be inspected first. That ordering creates an anchoring risk: someone who
+has already read a provider's answer for a company cannot independently verify that
+company, they can only agree or disagree with a number they have seen.
+
+The control is that ground truth is logged **blind**. The review worksheet lists the
+domain and its tier and nothing else. Provider answers are withheld from the worksheet
+and joined to it only after every ground-truth value has been written down and
+committed. The aggregate spread may be inspected before review, since disagreement
+counts and coverage rates reveal nothing about which value is correct for any
+particular company.
 
 ## Scoring
 
