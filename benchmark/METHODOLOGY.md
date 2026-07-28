@@ -17,12 +17,24 @@ Sculpted's own play is one of the contestants. A benchmark run by a contestant i
 worth nothing unless the method removes the ways the author could tilt it. Four
 mechanisms, all fixed in advance:
 
-1. **Ground truth never comes from LinkedIn.** Our play reads LinkedIn. If the truth
-   were also LinkedIn, we would win by construction and the result would measure
-   nothing. Ground truth comes from sources no contestant uses (below).
-2. **Judges are blind to the provider.** A judge sees a domain and a claimed number.
-   It is never told which provider produced it, and provider order is shuffled per
-   row, so a judge cannot infer identity from position.
+1. **The reference is LinkedIn by design, and our advantage on it is declared.**
+   Firmographic providers overwhelmingly derive headcount from LinkedIn-sourced
+   profiles, so LinkedIn is the reference they are all approximating and distance
+   from it is what a buyer actually cares about. The Sculpted play reads that
+   reference directly, so its count score measures reading fidelity rather than
+   independent correctness. That is intended, it is not a discovery, and it must
+   be said wherever these numbers appear. The findings are the other providers'
+   distance from the reference and their cost per correct answer. Identity is a
+   separate matter: every contestant resolves a domain to a company page and is
+   scored against the same human-confirmed answer, with no advantage to anyone.
+2. **The reviewer is blind to the provider.** Ground truth was recorded by a human
+   in a purpose-built console. Per company it showed the domain, the company's own
+   homepage framed in the page, and the candidate LinkedIn pages deduplicated,
+   unlabeled, and shuffled by a domain-seeded ordering, with a path to reject all
+   of them and paste the correct page instead. No provider name and no provider's
+   employee count was ever rendered, so the reviewer judged a page rather than a
+   vendor. The console is `ground_truth_console.py` in this directory and is
+   forbidden by construction from reading the provider result files.
 3. **The sample is fixed and published before the run.** No dropping hard rows after
    the fact, no adding easy ones.
 4. **The raw per-company results are published**, not just the summary table. Anyone
