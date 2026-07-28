@@ -51,14 +51,14 @@ def _not_measurable_fact():
     return fact
 
 
-def test_all_three_rows_are_locked_before_any_unlock():
+def test_all_four_rows_are_locked_before_any_unlock():
     html = _accuracy_html(_cfg(), [_obj()])
-    assert html.count("LOCKED") == 3
+    assert html.count("LOCKED") == 4
 
 
 def test_an_unlocked_row_renders_as_a_graded_signal():
     html = _accuracy_html(_cfg(), [_obj(with_unlock=True)])
-    assert html.count("LOCKED") == 2
+    assert html.count("LOCKED") == 3
     assert "32.6%" in html
     assert "Employee-count accuracy" in html
 
@@ -109,9 +109,9 @@ def test_a_not_measurable_row_says_why_it_could_not_be_measured():
 
 def test_a_not_measurable_row_is_not_presented_as_still_locked():
     """The user paid for this run. It renders as measured-and-ungradeable, not
-    as one of the two rows they never bought."""
+    as one of the three rows they never bought."""
     html = _accuracy_html(_cfg(), [_obj(fact=_not_measurable_fact())])
-    assert html.count("LOCKED") == 2
+    assert html.count("LOCKED") == 3
     assert "Employee-count accuracy" in html
 
 
@@ -180,8 +180,8 @@ def test_the_card_stops_calling_accuracy_locked_once_a_play_has_run():
     assert "The accuracy grade is one step away" not in html
     assert "Accuracy: unlock stage 02" not in html
     assert '<div class="st">Unlocked</div>' in html
-    # The remaining two rows are still locked and still say so.
-    assert _accuracy_html(_cfg(), [_obj(with_unlock=True)]).count("LOCKED") == 2
+    # The remaining three rows are still locked and still say so.
+    assert _accuracy_html(_cfg(), [_obj(with_unlock=True)]).count("LOCKED") == 3
     # Stage 03 keeps its locked chip.
     assert '<div class="st">Locked</div>' in html
 
