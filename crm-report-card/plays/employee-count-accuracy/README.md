@@ -10,16 +10,22 @@ the report card.
 column. Records with a blank stored count are skipped, because a blank is a
 completeness problem the free scan already grades.
 
-**Providers:** Icypeas resolves the domain to a LinkedIn company URL, with Exa
-as the fallback when Icypeas misses. Every resolved URL is then scraped in one
-batched call to Apify's HarvestAPI LinkedIn-company actor, so a 100-record
-sample runs one scrape, not a hundred. An identity check confirms the scraped
-company is the one you meant: deterministic domain match first, and a small
-model call (`ai_inference`) only when that match fails or the scraped page has
-no usable website field. All four are Deepline-native and billed to your own
-Deepline account with credits. There is no key to set up.
+**Providers:** Exa resolves the domain to a LinkedIn company URL (`exa_answer`,
+one query per record). Every resolved URL is then scraped in one batched call
+to Apify's HarvestAPI LinkedIn-company actor, so a 100-record sample runs one
+scrape, not a hundred. An identity check confirms the scraped company is the
+one you meant: deterministic domain match first, and a small model call
+(`ai_inference`) only when that match fails or the scraped page has no usable
+website field. All three are Deepline-native and billed to your own Deepline
+account with credits. There is no key to set up.
 
-**What it costs:** at most $0.02 per matched record, so at most $2 for the
+Exa is the sole resolver as of 2026-07-28, replacing a two-round Icypeas+Exa
+waterfall. Measured against a 100-company, hand-confirmed benchmark, Exa alone
+resolved 98/100 correctly -- more accurate than the old two-round waterfall
+(96/100) and Icypeas alone (92/100) -- for about half of what Icypeas's own
+resolver call cost by itself.
+
+**What it costs:** at most $0.01 per matched record, so at most $1 for the
 default 100-record sample. That figure is a ceiling: a miss at any step costs
 nothing, and the identity-check model call only runs on the smaller set of
 rows where the domain match fails.

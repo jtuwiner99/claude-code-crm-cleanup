@@ -1,16 +1,28 @@
 """Exercise buildOutputRows -- the function that assembles employee-count-
-accuracy's final per-company rows from round 1's verified rows plus round
-2's rescue map -- directly via Node, same pattern as the other play tests.
+accuracy's final per-company rows from the verify dataset's materialized rows
+-- directly via Node, same pattern as the other play tests.
 
-buildOutputRows answers "what do the merged rows look like." It is
+buildOutputRows answers "what do the output rows look like." It is
 deliberately silent on "how do they get returned" (materialized array vs.
 durable dataset handle): that second question is a separate concern, guarded
 by test_play_output_is_a_dataset_handle.py, because a past regression got
-THIS part right (the merge) while still shipping truncated output by
-wrapping the correct merge in `.map(...)` and returning a plain array
-instead of a `ctx.dataset(...)` handle. A shape-only test on buildOutputRows
-would have kept passing straight through that regression, which is exactly
-why it needs its own dedicated test.
+this part right (the row shape) while still shipping truncated output by
+wrapping the correct shape in `.map(...)` and returning a plain array instead
+of a `ctx.dataset(...)` handle. A shape-only test on buildOutputRows would
+have kept passing straight through that regression, which is exactly why it
+needs its own dedicated test.
+
+This test was rewritten when the play dropped its two-round icypeas+exa
+waterfall for a single exa_answer resolver (2026-07-28). buildOutputRows used
+to take a second argument -- a round-2-by-record-id rescue map -- and merge
+it against round 1's result via mergeVerification(). With only one round left,
+there is nothing to merge: buildOutputRows now takes a single list of
+verified rows and reads each row's own `verification` field directly. The
+merge-specific cases (round-1 pass untouched despite a round-2 entry,
+round-1 failure rescued by round 2, round-1 failure round 2 also rejects) no
+longer apply and are not tested here; test_play_round2_merge.py, which
+covered mergeVerification directly, was deleted for the same reason --
+mergeVerification no longer exists.
 
 Skips (does not fail) when `node` is not on PATH, since Node is a Deepline
 CLI prerequisite rather than a Python test dependency.
@@ -37,18 +49,18 @@ function verifiedRow(record_id, domain, company_size, verification) {
   return { record_id, domain, company_size, verification };
 }
 
-function round1Pass() {
+function pass() {
   return {
     passed: true,
     verified_employee_count: 50000,
     source: 'harvestapi via apify',
     verified_range: '10001-50000',
     verified_linkedin_url: 'https://linkedin.com/company/zendesk',
-    identity_method: 'website-match:icypeas',
+    identity_method: 'website-match',
   };
 }
 
-function round1Fail(identity_method) {
+function fail(identity_method) {
   return {
     passed: false,
     verified_employee_count: '',
@@ -59,56 +71,35 @@ function round1Fail(identity_method) {
   };
 }
 
-function round2Rescue() {
-  return {
-    passed: true,
-    verified_employee_count: 7603,
-    source: 'harvestapi via apify',
-    verified_range: '5001-10000',
-    verified_linkedin_url: 'https://linkedin.com/company/zendesk',
-    identity_method: 'ai-verified:exa',
-  };
-}
-
-const verifiedRows1 = [
-  // Row A: round-1 pass, round 2 never ran for it (no entry in the map).
-  verifiedRow('rec-a', 'stripe.com', '1001-5000', round1Pass()),
-  // Row B: round-1 failure, rescued by round 2 (the zendesk.com case from
-  // the real run this bug was found against).
-  verifiedRow('rec-b', 'zendesk.com', '5001-10000', round1Fail('not-scraped')),
-  // Row C: round-1 failure, round 2 also rejected it (segment.com case).
-  verifiedRow('rec-c', 'segment.com', '1001-5000', round1Fail('ai-rejected')),
+const verifiedRows = [
+  // Row A: resolved and verified via the deterministic website match.
+  verifiedRow('rec-a', 'stripe.com', '1001-5000', pass()),
+  // Row B: no LinkedIn URL resolved at all.
+  verifiedRow('rec-b', 'zendesk.com', '5001-10000', fail('no-linkedin-url')),
+  // Row C: resolved and scraped, but the identity check rejected it.
+  verifiedRow('rec-c', 'segment.com', '1001-5000', fail('ai-rejected')),
 ];
 
-const round2ByRecordId = {
-  'rec-b': round2Rescue(),
-  'rec-c': round1Fail('ai-rejected'),
-  // Deliberately no entry for 'rec-a': round 1 already passed for it.
-};
-
-const rows = buildOutputRows(verifiedRows1, round2ByRecordId);
+const rows = buildOutputRows(verifiedRows);
 
 assert.strictEqual(rows.length, 3, 'must return exactly one output row per input row');
 
-// Row A: pass-through fields carried straight from the input row, round-1
-// verification untouched.
+// Row A: pass-through fields carried straight from the input row, plus the
+// verification fields flattened onto the row.
 assert.strictEqual(rows[0].record_id, 'rec-a');
 assert.strictEqual(rows[0].domain, 'stripe.com');
 assert.strictEqual(rows[0].stored_employee_count, '1001-5000');
 assert.strictEqual(rows[0].verified_employee_count, 50000);
-assert.strictEqual(rows[0].identity_method, 'website-match:icypeas');
+assert.strictEqual(rows[0].source, 'harvestapi via apify');
+assert.strictEqual(rows[0].verified_linkedin_url, 'https://linkedin.com/company/zendesk');
+assert.strictEqual(rows[0].identity_method, 'website-match');
 
-// Row B: rescued -- must carry round 2's count, range, source, URL, method.
+// Row B: unverifiable because nothing resolved -- stays empty, not a mismatch.
 assert.strictEqual(rows[1].record_id, 'rec-b');
-assert.strictEqual(rows[1].domain, 'zendesk.com');
-assert.strictEqual(rows[1].stored_employee_count, '5001-10000');
-assert.strictEqual(rows[1].verified_employee_count, 7603);
-assert.strictEqual(rows[1].verified_range, '5001-10000');
-assert.strictEqual(rows[1].source, 'harvestapi via apify');
-assert.strictEqual(rows[1].verified_linkedin_url, 'https://linkedin.com/company/zendesk');
-assert.strictEqual(rows[1].identity_method, 'ai-verified:exa');
+assert.strictEqual(rows[1].verified_employee_count, '');
+assert.strictEqual(rows[1].identity_method, 'no-linkedin-url');
 
-// Row C: rejected both rounds -- stays empty/unverifiable, not a mismatch.
+// Row C: resolved but rejected by the identity check -- stays empty, not a mismatch.
 assert.strictEqual(rows[2].record_id, 'rec-c');
 assert.strictEqual(rows[2].verified_employee_count, '');
 assert.strictEqual(rows[2].identity_method, 'ai-rejected');
@@ -146,7 +137,7 @@ def test_build_output_rows_source_is_reachable_via_the_pure_helpers_block():
     )
 
 
-def test_build_output_rows_shape_covers_pass_rescue_and_double_reject():
+def test_build_output_rows_shape_covers_pass_and_two_failure_reasons():
     if shutil.which("node") is None:
         pytest.skip("node is not on PATH (a Deepline CLI prerequisite, not a Python test dependency)")
 

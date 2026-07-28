@@ -4,12 +4,13 @@
 # Run this after ANY change to the play, before any full run. It costs about
 # six cents and takes a minute. A full 100-row run costs about two dollars.
 #
-# It exists because three separate bugs shipped that all looked identical from
+# It exists because two separate bugs shipped that both looked identical from
 # the outside: the play computed correct answers and failed to hand them back.
-# A column-name collision made round 2's rescues invisible. A return-shape
-# change silently truncated 100 rows to 20. In both cases `deepline plays check`
-# passed, the run reported completed, and the only way to find out was a paid
-# 100-row run.
+# A dataset column-name collision (from the play's old two-round icypeas+exa
+# waterfall, since removed -- exa_answer is now the sole resolver) made the
+# round-2 rescue's result invisible. A return-shape change silently truncated
+# 100 rows to 20. In both cases `deepline plays check` passed, the run
+# reported completed, and the only way to find out was a paid 100-row run.
 #
 # `plays check` validates the contract, not the plumbing. The Python suite
 # covers the scorer and the pure string helpers, not whether data survives the
@@ -25,12 +26,13 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # Three domains chosen deliberately, not at random:
-#   stripe.com    resolves cleanly on the first pass, the happy path
-#   airtable.com  the first resolver gets this WRONG; only the round-2 fallback
-#                 rescues it, so a row that comes back unanswered means the
-#                 rescue path or its merge is broken again
-#   segment.com   both passes fail, and it must come back unanswered rather
-#                 than carrying a confident wrong number
+#   stripe.com    resolves cleanly, the happy path
+#   airtable.com  exa_answer (the sole resolver as of 2026-07-28) resolves this
+#                 one correctly on the measured 100-company benchmark, so a row
+#                 that comes back unanswered means the resolver or the identity
+#                 check regressed
+#   segment.com   resolution or identity check fails, and it must come back
+#                 unanswered rather than carrying a confident wrong number
 cat > "$TMP/rows.json" <<'JSON'
 {"rows":[
   {"record_id":"1","domain":"stripe.com","company_size":""},
@@ -121,23 +123,25 @@ def count(d):
 def method(d):
     return (rows.get(d, {}).get("identity_method") or "").strip()
 
-# Happy path: first-pass resolution, real number.
+# Happy path: resolution succeeds, real number.
 if not count("stripe.com"):
     fails.append("stripe.com came back with no count (happy path broken)")
 
-# Rescue path: the first resolver gets airtable wrong. A missing count here
-# means round 2 or its merge regressed, which is the bug that shipped twice.
+# exa_answer resolves airtable.com correctly on the measured benchmark. A
+# missing count here means the resolver or the identity check regressed.
+PASSING_METHODS = {"website-match", "website-match-name-escalated:ai-verified", "ai-verified"}
 if not count("airtable.com"):
-    fails.append("airtable.com has no count. The round-2 rescue or its merge "
-                 "is broken: the first resolver gets this one wrong on purpose.")
-elif ":exa" not in method("airtable.com"):
+    fails.append("airtable.com has no count. The resolver or the identity "
+                 "check is broken: exa_answer resolves this one correctly.")
+elif method("airtable.com") not in PASSING_METHODS:
     fails.append(f"airtable.com resolved via {method('airtable.com')!r}, "
-                 "expected a round-2 (:exa) rescue")
+                 f"expected one of {sorted(PASSING_METHODS)}")
 
 # Honest refusal: must decline rather than report a confident wrong number.
 if count("segment.com"):
     fails.append(f"segment.com returned a count ({count('segment.com')}) but "
-                 "both passes should reject it. A wrong number is worse than none.")
+                 "resolution or the identity check should reject it. A wrong "
+                 "number is worse than none.")
 
 if fails:
     print("FAIL")
