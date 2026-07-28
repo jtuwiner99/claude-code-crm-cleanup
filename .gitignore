@@ -21,3 +21,6 @@ __pycache__/
 # Internal design docs (specs, plans, release runbook) are kept outside this
 # public repo. Nothing under docs/ ships here.
 docs/
+
+# raw provider payloads are large; kept locally, not committed
+benchmark/raw_payloads/
