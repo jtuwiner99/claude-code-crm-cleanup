@@ -4,9 +4,9 @@
 > built yet.** The offline scan is covered by 275 tests. The employee-count
 > accuracy play has been run end to end against 100 companies with
 > hand-confirmed ground truth: 100% correct company identification, 100%
-> correct headcount on the 99 it answered, at about a cent per company. See
-> [`benchmark/`](benchmark/) for the method, the raw results, and the ground
-> truth. The email-deliverability and still-employed plays are named on the
+> correct headcount on the 99 it answered, at about a cent per company. See [`benchmark/RESULTS.md`](benchmark/RESULTS.md) for the full results and
+> [`benchmark/METHODOLOGY.md`](benchmark/METHODOLOGY.md) for the method, including
+> every amendment made to it. The email-deliverability and still-employed plays are named on the
 > card but not yet built.
 
 A Tier 0 CRM data-quality audit. Point it at a CRM CSV export and it produces
