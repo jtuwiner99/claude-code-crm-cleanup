@@ -6,11 +6,18 @@
       "unlocks": "employee_count_accuracy",
       "object_type": "company",
       "label": "Employee-count accuracy, verified vs stored",
-      "requires_roles": ["domain", "company_size"],
-      "providers": ["exa_answer", "apify_run_actor_sync", "ai_inference"],
+      "requires_roles": [
+        "domain",
+        "company_size"
+      ],
+      "providers": [
+        "exa_answer",
+        "apify_run_actor_sync",
+        "ai_inference"
+      ],
       "cost_per_record_usd": 0.01,
       "default_sample": 100,
-      "comparison_rule": "mismatch = stored count and the LinkedIn associated-member count fall two or more size bands apart. LinkedIn associated members counts profiles that list the company, which runs higher than payroll headcount."
+      "comparison_rule": "mismatch = the stored count and the LinkedIn associated-member count fall in different size bands. LinkedIn associated members counts profiles that list the company, which runs higher than payroll headcount."
     }
   ]
 }

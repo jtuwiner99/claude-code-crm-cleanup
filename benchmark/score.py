@@ -140,7 +140,9 @@ def score(truth: dict, providers: dict) -> dict:
 
     for name in names:
         identity_total = identity_right = 0
-        count_scored = count_right = 0
+        count_scored = count_right = count_lenient = 0
+        rel_errors: list[float] = []
+        gave_exact = 0
         cond_scored = cond_right = 0
         abs_errors: list[int] = []
         ratios: list[float] = []
@@ -177,7 +179,15 @@ def score(truth: dict, providers: dict) -> dict:
                 t["scored"] += 1
                 continue
 
-            ok = abs(ref_i - got_i) <= 1
+            # Strict: the answer must land in the SAME band as the reference.
+            # Adjacent-band tolerance was dropped on 2026-07-28. Routing rules cut
+            # at band boundaries, so 99 against 101 sends a record somewhere else
+            # even though the companies are the same size. Forgiving that hides
+            # the error that actually costs an operator something. The lenient
+            # number is still computed and reported so the effect of tightening
+            # the rule is visible rather than buried.
+            ok = (ref_i == got_i)
+            count_lenient += 1 if abs(ref_i - got_i) <= 1 else 0
             count_scored += 1
             count_right += 1 if ok else 0
             t["scored"] += 1
@@ -186,6 +196,19 @@ def score(truth: dict, providers: dict) -> dict:
             if id_ok:                       # 3. count given the right page
                 cond_scored += 1
                 cond_right += 1 if ok else 0
+
+            # Relative error against the reference, for providers that return an
+            # exact number at all. A provider that only sells bands cannot be
+            # scored here, which is itself a product fact worth reporting.
+            if (pr.get("count") or "").strip():
+                gave_exact += 1
+                try:
+                    a = float(str(ref).replace(",", ""))
+                    b = float(str(pr["count"]).replace(",", ""))
+                    if a > 0:
+                        rel_errors.append(abs(a - b) / a)
+                except (TypeError, ValueError):
+                    pass
 
             if not ok:
                 try:
@@ -206,6 +229,10 @@ def score(truth: dict, providers: dict) -> dict:
             "identity_right": identity_right,
             "count_scored": count_scored,
             "count_right": count_right,
+            "count_right_lenient": count_lenient,
+            "gave_exact_count": gave_exact,
+            "median_rel_error_pct": (round(statistics.median(rel_errors) * 100, 1)
+                                     if rel_errors else None),
             "count_right_given_identity_scored": cond_scored,
             "count_right_given_identity": cond_right,
             "median_abs_error_when_wrong": int(statistics.median(abs_errors)) if abs_errors else None,
@@ -231,7 +258,8 @@ def render(report: dict, truth_n: int) -> str:
     L.append("that same source, so its score measures reading fidelity, not independent")
     L.append("correctness. A high score for ourplay is expected and is not a finding.")
     L.append("")
-    head = f"{'provider':16s} {'answered':>9s} {'right URL':>10s} {'count ok':>9s} {'count|URL ok':>13s} {'med x off':>10s} {'$/correct':>10s}"
+    head = (f"{'provider':16s} {'answered':>9s} {'right URL':>10s} {'band ok':>8s} "
+            f"{'(lenient)':>10s} {'band|URL':>9s} {'med err':>8s} {'$/correct':>10s}")
     L.append(head)
     L.append("-" * len(head))
     for name, r in sorted(report.items()):
@@ -239,15 +267,22 @@ def render(report: dict, truth_n: int) -> str:
             f"{name:16s} "
             f"{r['answered']:>4d}/{r['rows_compared']:<4d} "
             f"{_pct(r['identity_right'], r['identity_scored']):>10s} "
-            f"{_pct(r['count_right'], r['count_scored']):>9s} "
-            f"{_pct(r['count_right_given_identity'], r['count_right_given_identity_scored']):>13s} "
-            f"{(str(r['median_ratio_when_wrong']) + 'x') if r['median_ratio_when_wrong'] else '-':>10s} "
+            f"{_pct(r['count_right'], r['count_scored']):>8s} "
+            f"{_pct(r['count_right_lenient'], r['count_scored']):>10s} "
+            f"{_pct(r['count_right_given_identity'], r['count_right_given_identity_scored']):>9s} "
+            f"{(format(r['median_rel_error_pct'], '.1f') + '%') if r['median_rel_error_pct'] is not None else 'band only':>8s} "
             f"{('$' + format(r['cost_per_correct_usd'], '.3f')) if r['cost_per_correct_usd'] else '-':>10s}"
         )
     L.append("")
-    L.append("count|URL ok = count accuracy on only the rows where the provider found the")
-    L.append("right company. The gap to plain count accuracy is how much of its error was")
-    L.append("never a counting problem at all.")
+    L.append("band ok   = the answer lands in the SAME size band as the reference.")
+    L.append("(lenient) = the old rule, same or adjacent band, shown so the effect of")
+    L.append("            tightening is visible rather than hidden.")
+    L.append("band|URL  = band accuracy on only the rows where the provider found the right")
+    L.append("            company. The gap to plain band accuracy is how much of its error")
+    L.append("            was never a counting problem at all.")
+    L.append("med err   = median relative error of the exact headcount. 'band only' means the")
+    L.append("            provider never returns an exact number and cannot serve a routing")
+    L.append("            rule that cuts at a threshold.")
     return "\n".join(L)
 
 

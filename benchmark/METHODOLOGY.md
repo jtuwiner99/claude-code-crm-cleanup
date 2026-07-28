@@ -1,10 +1,26 @@
 # Employee-count provider benchmark: pre-registered methodology
 
-**This document is committed BEFORE any provider is run.** Its git timestamp is the
-proof. The 100 domains in `domains.csv` are fixed at the same commit. Nothing in the
-method, the sample, or the scoring rules changes after results are seen. If something
-has to change, the change is committed as its own commit with a stated reason, so the
-edit history is public too.
+**This document was committed BEFORE any provider was run.** Its git timestamp is the
+proof, and the 100 domains in `domains.csv` were fixed at the same commit.
+
+It has since been amended. Every amendment is its own commit with its reason, so the
+original and the change are both public and the sequence is checkable. Three are
+material and each says so in place:
+
+- **The reference became the LinkedIn People count** (amended before any truth was
+  recorded). The original excluded LinkedIn; that was wrong about the market.
+- **Identity and count became separate dimensions** (amended before any truth existed).
+- **Scoring became strict same-band** (amended AFTER results were visible). This is
+  the one that deserves suspicion: it moved every competitor down and left our own
+  play unmoved. Both the strict and the lenient numbers are therefore published side
+  by side, permanently, so the effect of the change is visible rather than buried.
+
+Four ground-truth rows were also corrected after provider results were seen. They are
+listed with their reasons and their effect on the scores in their own section below.
+
+Amending a benchmark you are competing in is a real hazard. The mitigation here is not
+that it never happened, it is that every instance is named, dated, reasoned, and
+reported alongside the number it replaced.
 
 ## The question
 
@@ -186,25 +202,46 @@ so anyone can rescore against the original values if they disagree.
 
 ## Scoring
 
-Headcount is not a point value: a company with 480 employees may honestly report 500.
-So a provider's answer is scored **correct when it falls in the same size band as the
-ground truth, or in an adjacent band**. Bands are the ones the report card already
-uses:
+**Amended 2026-07-28, after results were visible. The direction of the change and
+its effect are stated here because that is the honest way to make it.**
+
+A provider's answer is correct when it lands in the **same** size band as the
+reference. Adjacent bands are wrong. Bands are the ones the report card uses:
 
 ```
 1-10, 11-50, 51-200, 201-500, 501-1000, 1001-5000, 5001-10000, 10001+
 ```
 
-Two or more bands apart is wrong. This is the same rule the shipped product applies,
-so the benchmark measures the product's actual behavior and not a rule invented for
-the occasion.
+The original rule forgave an adjacent band, on the reasoning that a company with
+480 employees might honestly report 500. That was replaced because **routing
+rules cut at band boundaries**. An operator who segments at 100 employees sends a
+record one way at 99 and the other way at 101. A number that lands in the wrong
+band sends the record to the wrong place, and calling that correct hides the
+error that actually costs something.
 
-Three outcomes per company per provider:
+**This change moved every competitor down and left the Sculpted play unmoved**,
+which is exactly the shape of a self-serving rule change, so both numbers are
+published side by side in every table and the lenient column is never dropped:
 
-- **Answered and correct**
-- **Answered and wrong**
-- **No answer** (provider returned nothing, or returned something that failed its own
-  identity check)
+| | strict (same band) | lenient (same or adjacent) |
+|---|---|---|
+| ourplay | 100.0% | 100.0% |
+| peopledatalabs | 67.7% | 99.0% |
+| crustdata | 55.6% | 86.9% |
+
+The reason the gap is that large is not boundary noise. **PeopleDataLabs' median
+relative error on its exact headcount is 24.7%** — when it returns a number, the
+typical answer is a quarter away from the reference. The lenient rule was
+absorbing that. The Sculpted play's median error is 0.0%, which is the home
+advantage restated: it reads the reference, so it does not so much agree with it
+as copy it.
+
+**Exact numbers versus bands is itself a product difference.** PeopleDataLabs
+returns an exact headcount on 100 of 100. The Sculpted play returns one on 99 of
+100. Crustdata returns an exact headcount on **0 of 100**: it only ever answers
+with a range. A buyer whose routing rule cuts at a threshold cannot use Crustdata
+for that purpose at any accuracy level, so it is reported as `band only` rather
+than given a relative-error score it structurally cannot earn.
 
 ## Metrics
 
