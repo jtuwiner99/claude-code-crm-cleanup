@@ -57,6 +57,7 @@ _ACCURACY_REGISTRY = [
     ("employee_count_accuracy", "Employee-count accuracy, verified vs stored", "rate"),
     ("email_deliverability", "Email deliverability, not just format", "rate"),
     ("still_employed", "Still-employed accuracy, real not timestamp", "rate"),
+    ("linkedin_url_verified", "LinkedIn URLs that point at the right person", "rate"),
 ]
 
 _HUBSPOT_OBJECT_TYPE_IDS = {"company": "0-2", "contact": "0-1"}

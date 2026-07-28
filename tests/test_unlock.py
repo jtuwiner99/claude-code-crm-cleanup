@@ -141,4 +141,19 @@ def test_missing_comparison_rule_is_rejected():
 
 def test_accuracy_unlock_keys_are_the_three_locked_rows():
     assert ACCURACY_UNLOCKS == ("employee_count_accuracy", "email_deliverability",
-                                "still_employed")
+                                "still_employed", "linkedin_url_verified")
+
+
+def test_linkedin_url_verified_is_a_known_unlock():
+    assert "linkedin_url_verified" in ACCURACY_UNLOCKS
+
+
+def test_fragment_with_linkedin_unlock_validates():
+    fragment = {
+        "unlock": "linkedin_url_verified", "object_type": "contact",
+        "sample_size": 100, "checked": 80, "mismatched": 4, "rate": 0.05,
+        "unverifiable": 6, "examples": [], "offending_ids": [],
+        "provider": "exa (60), waterfall (20)", "run_at": "2026-07-28",
+        "comparison_rule": "wrong person",
+    }
+    assert validate_fragment(fragment) == []

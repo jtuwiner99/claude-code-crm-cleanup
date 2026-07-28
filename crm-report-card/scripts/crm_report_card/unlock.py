@@ -8,7 +8,8 @@ from __future__ import annotations
 import copy
 from .grading import grade_rate, overall_grade
 
-ACCURACY_UNLOCKS = ("employee_count_accuracy", "email_deliverability", "still_employed")
+ACCURACY_UNLOCKS = ("employee_count_accuracy", "email_deliverability",
+                    "still_employed", "linkedin_url_verified")
 
 _REQUIRED = ("unlock", "object_type", "sample_size", "checked", "mismatched",
              "rate", "unverifiable", "examples", "offending_ids", "provider",
