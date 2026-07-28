@@ -119,9 +119,30 @@ def recorded_domains(rows: list[dict]) -> set[str]:
     return {r["domain"] for r in rows if r.get("domain")}
 
 
-def pending(domains: list[dict], rows: list[dict]) -> list[dict]:
-    """Domains from domains.csv with no row yet in ground_truth.jsonl, in
-    original domains.csv order. This is the resume queue."""
+def pending(domains: list[dict], rows: list[dict], only: set[str] | None = None,
+            exclude: set[str] | None = None) -> list[dict]:
+    """Domains from domains.csv still needing a console visit, in original
+    domains.csv order.
+
+    Default (only=None): the append-only resume queue -- any domain with at
+    least one row already in ground_truth.jsonl is skipped.
+
+    only, when given a set of domains, switches to re-review mode for those
+    specific rows: the already-recorded skip logic above is bypassed
+    entirely, so a domain in `only` is served regardless of what is already
+    in ground_truth.jsonl (that is the whole point -- correcting a row
+    confirmed against the wrong LinkedIn page). Domains not in `only` are
+    never served in this mode, and a domain in `only` that is not in
+    domains.csv is simply absent from the result.
+
+    exclude is session-local bookkeeping (not derived from ground_truth.jsonl
+    at all): the caller adds a domain to it once it has been re-submitted in
+    the current console run, so the --only queue advances to the next
+    requested domain instead of re-showing the one just corrected. Ignored
+    when only is None."""
+    if only is not None:
+        exclude = exclude or set()
+        return [d for d in domains if d["domain"] in only and d["domain"] not in exclude]
     done = recorded_domains(rows)
     return [d for d in domains if d["domain"] not in done]
 

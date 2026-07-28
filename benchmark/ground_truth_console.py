@@ -44,6 +44,17 @@ anchoring risk METHODOLOGY.md's "Anchoring control" section closes off.
 Usage:
   python3 ground_truth_console.py [--domains PATH] [--out PATH]
       [--raw-results PATH] [--ourplay-results PATH] [--port 7799]
+      [--only domain1.com,domain2.com,...]
+
+--only restricts the console to a specific comma-separated set of domains and
+ignores the normal already-recorded skip logic for them, so a row that was
+confirmed against the wrong LinkedIn page (e.g. close.com, copper.com,
+cal.com) can be re-reviewed and corrected. Without --only, behavior is
+unchanged: any domain already in ground_truth.jsonl is skipped as usual.
+Corrections append normally either way (ground_truth.jsonl stays append-only,
+last-row-wins). Within one --only session, a domain drops off the front of
+the queue once it has been resubmitted this run (gtl.pending's `exclude`),
+so the console advances to the next requested domain.
 """
 from __future__ import annotations
 
@@ -342,25 +353,35 @@ refresh();
 </script></body></html>"""
 
 
-def create_app(domains_path, out_path, raw_results_path=None, ourplay_results_path=None) -> Flask:
+def create_app(domains_path, out_path, raw_results_path=None, ourplay_results_path=None,
+               only=None) -> Flask:
     app = Flask(__name__)
     domains_path, out_path = Path(domains_path), Path(out_path)
     raw_results_path = Path(raw_results_path) if raw_results_path else DEFAULT_RAW_RESULTS
     ourplay_results_path = Path(ourplay_results_path) if ourplay_results_path else DEFAULT_OURPLAY_RESULTS
 
+    # only: a set of domains for re-review mode, or None for normal behavior.
+    # only_done is session-local (this process only, never written to disk):
+    # it tracks which --only domains have been resubmitted this run so the
+    # queue advances instead of re-showing the one just corrected.
+    only_set = set(only) if only else None
+    only_done: set = set()
+
     def state_payload():
         domains = gtl.load_domains(domains_path)
         rows = gtl.load_ground_truth(out_path)
-        todo = gtl.pending(domains, rows)
+        todo = gtl.pending(domains, rows, only=only_set, exclude=only_done)
         row = None
         if todo:
             d = todo[0]
             ctx = gtl.row_context_for(d["domain"], raw_results_path, ourplay_results_path)
             row = {**d, **ctx}
+        total = len(only_set) if only_set is not None else len(domains)
+        done = total - len(todo)
         return {
             "row": row,
-            "done": len(domains) - len(todo),
-            "total": len(domains),
+            "done": done,
+            "total": total,
         }
 
     @app.get("/")
@@ -395,6 +416,8 @@ def create_app(domains_path, out_path, raw_results_path=None, ourplay_results_pa
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         gtl.append_record(out_path, record)
+        if only_set is not None and domain in only_set:
+            only_done.add(domain)
         return jsonify(state_payload())
 
     @app.get("/proxy")
@@ -428,8 +451,16 @@ def main() -> None:
     parser.add_argument("--ourplay-results", default=str(DEFAULT_OURPLAY_RESULTS))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7799)
+    parser.add_argument(
+        "--only", default=None,
+        help="Comma-separated domains to re-review, ignoring the already-recorded "
+             "skip logic for exactly those domains (e.g. close.com,copper.com,cal.com). "
+             "Omit for normal resume behavior.")
     args = parser.parse_args()
-    app = create_app(args.domains, args.out, args.raw_results, args.ourplay_results)
+    only = None
+    if args.only:
+        only = {d.strip() for d in args.only.split(",") if d.strip()}
+    app = create_app(args.domains, args.out, args.raw_results, args.ourplay_results, only=only)
     app.run(host=args.host, port=args.port, debug=False)
 
 

@@ -91,6 +91,69 @@ def test_pending_with_no_rows_returns_everything(tmp_path):
     assert gtc.pending(domains, []) == domains
 
 
+# --------------------------------------------------------------------------
+# pending(): --only re-review mode (row-selection logic for the console flag)
+# --------------------------------------------------------------------------
+
+def test_pending_only_ignores_the_already_recorded_skip_logic(tmp_path):
+    """The whole point of --only: a domain already confirmed in
+    ground_truth.jsonl (e.g. against the wrong LinkedIn page) must still be
+    served when it's named in `only`, unlike the default resume queue."""
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    rows = [_correct_record("stripe.com")]
+    todo = gtc.pending(domains, rows, only={"stripe.com"})
+    assert [d["domain"] for d in todo] == ["stripe.com"]
+
+
+def test_pending_only_serves_nothing_outside_the_requested_set(tmp_path):
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    todo = gtc.pending(domains, [], only={"stripe.com"})
+    assert [d["domain"] for d in todo] == ["stripe.com"]
+    assert "segment.com" not in {d["domain"] for d in todo}
+
+
+def test_pending_only_preserves_domains_csv_order(tmp_path):
+    """Row order follows domains.csv, not the order domains were passed to
+    --only."""
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    todo = gtc.pending(domains, [], only={"segment.com", "stripe.com"})
+    assert [d["domain"] for d in todo] == ["stripe.com", "segment.com"]
+
+
+def test_pending_only_domain_absent_from_domains_csv_is_dropped(tmp_path):
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    todo = gtc.pending(domains, [], only={"stripe.com", "not-in-domains-csv.com"})
+    assert [d["domain"] for d in todo] == ["stripe.com"]
+
+
+def test_pending_only_with_exclude_advances_the_queue(tmp_path):
+    """exclude is the session-local 'already resubmitted this run' set: once
+    a domain in it, pending() stops serving it so the console can move on to
+    the next --only domain."""
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    only = {"stripe.com", "segment.com"}
+    todo = gtc.pending(domains, [], only=only, exclude={"stripe.com"})
+    assert [d["domain"] for d in todo] == ["segment.com"]
+    # Once every --only domain is excluded, nothing is left to serve.
+    todo_done = gtc.pending(domains, [], only=only, exclude=only)
+    assert todo_done == []
+
+
+def test_pending_without_only_ignores_exclude_and_is_unchanged(tmp_path):
+    """exclude is only meaningful in --only mode; passing it with only=None
+    must not change default resume behavior."""
+    csv_path = write(tmp_path / "domains.csv", DOMAINS_CSV)
+    domains = gtc.load_domains(csv_path)
+    rows = [_correct_record("stripe.com")]
+    todo = gtc.pending(domains, rows, exclude={"segment.com"})
+    assert [d["domain"] for d in todo] == ["segment.com"]
+
+
 def test_append_record_is_append_only_and_crash_safe(tmp_path):
     out_path = tmp_path / "ground_truth.jsonl"
     r1 = _correct_record("stripe.com")
