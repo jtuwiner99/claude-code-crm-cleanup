@@ -206,6 +206,22 @@ function tokenInList(token: string, list: string[]): boolean {
   return false;
 }
 
+// Merge one round-1 verification outcome with its round-2 rescue outcome, if
+// one exists. A round-1 PASS is returned untouched -- round 2 never runs
+// against a row that already succeeded. A round-1 FAILURE takes the round-2
+// result when one was computed for it (the alternate's count, range, source,
+// URL, and identity_method); a row round 2 also rejected, or never saw at
+// all, stays exactly as round 1 left it -- unverifiable, not a mismatch.
+//
+// This is the ONE place that decides which round wins, called from the
+// play's final return AND from the test that exercises this block via node,
+// so there is no separate reimplementation of the merge to drift out of
+// sync with the real logic.
+function mergeVerification(round1: any, round2: any): any {
+  if (round1 && round1.passed) return round1;
+  return round2 || round1;
+}
+
 // Legal-entity suffixes that show up on plenty of genuinely-correct LinkedIn
 // pages ("acme-inc" for domain "acme.com"). Filtered out of the "extra
 // token" count below so spelling out a corporate suffix does not by itself
@@ -364,6 +380,7 @@ export default definePlay(
         verified_employee_count: number | '';
         source: string;
         verified_range: string;
+        verified_linkedin_url: string;
         path: 'website' | 'website-escalated' | 'ai';
       }
     > {
@@ -406,6 +423,7 @@ export default definePlay(
         verified_employee_count: verifiedIdentity ? (employeeCount || '') : '',
         source: verifiedIdentity && employeeCount ? 'harvestapi via apify' : '',
         verified_range: verifiedIdentity ? formatRange(company.employeeCountRange) : '',
+        verified_linkedin_url: verifiedIdentity ? normalizeLinkedInUrl(linkedinUrl) : '',
         path,
       };
     }
@@ -420,19 +438,19 @@ export default definePlay(
         const icypeasUrl = row.icypeas_url;
 
         if (!icypeasUrl) {
-          return { passed: false, verified_employee_count: '', source: '', verified_range: '', identity_method: 'no-linkedin-url' };
+          return { passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '', identity_method: 'no-linkedin-url' };
         }
 
         const key = normalizeLinkedInUrl(icypeasUrl);
         const company = key ? scrapedByUrl[key] : null;
         if (!company) {
-          return { passed: false, verified_employee_count: '', source: '', verified_range: '', identity_method: 'not-scraped' };
+          return { passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '', identity_method: 'not-scraped' };
         }
 
         const match = await checkIdentity(domain, company, icypeasUrl);
         if (!match.verified) {
           return {
-            passed: false, verified_employee_count: '', source: '', verified_range: '',
+            passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '',
             identity_method: match.path === 'website-escalated' ? 'website-match-name-escalated:ai-rejected' : 'ai-rejected',
           };
         }
@@ -441,6 +459,7 @@ export default definePlay(
           verified_employee_count: match.verified_employee_count,
           source: match.source,
           verified_range: match.verified_range,
+          verified_linkedin_url: match.verified_linkedin_url,
           identity_method:
             match.path === 'website' ? 'website-match:icypeas'
             : match.path === 'website-escalated' ? 'website-match-name-escalated:ai-verified:icypeas'
@@ -544,9 +563,23 @@ export default definePlay(
       // Phase 4c: identity check per failed row against the round-2 batch
       // result (or the shared cache, for a candidate that happened to already
       // be scraped).
+      // Column deliberately named `altVerification`, NOT `verification` --
+      // resolvedRows2 already carries a `verification` field forward from
+      // round 1 (the failed outcome that earned this row a round-2 shot),
+      // and a second `.withColumn` writing the SAME field name back onto
+      // rows that already carry it collides with that pass-through value
+      // instead of cleanly replacing it. That collision is the actual data-
+      // loss bug: `deepline plays check` confirms it statically (the play's
+      // `fields` list carries `verification` twice, once per dataset), and
+      // it is why a rescued row's ROUND-1 rejection kept shipping in the
+      // final rows even though the durable `verify_alt` dataset (a separate
+      // table, immune to this in-memory collision) had the correct rescue
+      // recorded all along. A distinct column name here removes the
+      // collision outright rather than depending on an unwritten merge-order
+      // guarantee.
       const verified2 = await ctx
         .dataset('verify_alt', resolvedRows2)
-        .withColumn('verification', async (row: any) => {
+        .withColumn('altVerification', async (row: any) => {
           const domain = String(row.domain || '').trim();
           const exaUrl = row.exa_url;
           const icypeasUrl = row.icypeas_url;
@@ -556,7 +589,7 @@ export default definePlay(
             // never resolved anything to begin with; otherwise Icypeas DID
             // give us a (rejected) candidate, so this stays "ai-rejected".
             return {
-              verified_employee_count: '', source: '', verified_range: '',
+              passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '',
               identity_method: icypeasUrl ? 'ai-rejected' : 'no-linkedin-url',
             };
           }
@@ -566,25 +599,27 @@ export default definePlay(
           if (exaKey && icypeasKey && exaKey === icypeasKey) {
             // Same page Icypeas already gave us and that already failed --
             // do not re-check it, just mark it failed and move on.
-            return { verified_employee_count: '', source: '', verified_range: '', identity_method: 'ai-rejected' };
+            return { passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '', identity_method: 'ai-rejected' };
           }
 
           const company = exaKey ? scrapedByUrl[exaKey] : null;
           if (!company) {
-            return { verified_employee_count: '', source: '', verified_range: '', identity_method: 'ai-rejected' };
+            return { passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '', identity_method: 'ai-rejected' };
           }
 
           const match = await checkIdentity(domain, company, exaUrl);
           if (!match.verified) {
             return {
-              verified_employee_count: '', source: '', verified_range: '',
+              passed: false, verified_employee_count: '', source: '', verified_range: '', verified_linkedin_url: '',
               identity_method: match.path === 'website-escalated' ? 'website-match-name-escalated:ai-rejected' : 'ai-rejected',
             };
           }
           return {
+            passed: true,
             verified_employee_count: match.verified_employee_count,
             source: match.source,
             verified_range: match.verified_range,
+            verified_linkedin_url: match.verified_linkedin_url,
             identity_method:
               match.path === 'website' ? 'website-match:exa'
               : match.path === 'website-escalated' ? 'website-match-name-escalated:ai-verified:exa'
@@ -595,7 +630,7 @@ export default definePlay(
 
       const verifiedRows2 = await verified2.materialize();
       for (const r of verifiedRows2) {
-        round2ByRecordId[r.record_id] = r.verification;
+        round2ByRecordId[r.record_id] = r.altVerification;
       }
     }
 
@@ -607,9 +642,7 @@ export default definePlay(
 
     return {
       rows: verifiedRows1.map((r: any) => {
-        const verification = r.verification.passed
-          ? r.verification
-          : (round2ByRecordId[r.record_id] || r.verification);
+        const verification = mergeVerification(r.verification, round2ByRecordId[r.record_id]);
         return {
           record_id: r.record_id,
           domain: r.domain,
@@ -617,6 +650,7 @@ export default definePlay(
           verified_employee_count: verification.verified_employee_count,
           source: verification.source,
           verified_range: verification.verified_range,
+          verified_linkedin_url: verification.verified_linkedin_url,
           identity_method: verification.identity_method,
         };
       }),
