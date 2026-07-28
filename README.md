@@ -1,10 +1,13 @@
 # CRM Report Card
 
-> **Status: active development.** The free offline scan is complete and covered
-> by 211 tests. The paid accuracy layer (the plays that unlock the accuracy
-> grade) is built but has not yet been proven end to end against a live
-> provider, so treat those rows as unreleased. This notice comes down when it
-> has been.
+> **Status: the free scan is complete; one accuracy play is proven, two are not
+> built yet.** The offline scan is covered by 275 tests. The employee-count
+> accuracy play has been run end to end against 100 companies with
+> hand-confirmed ground truth: 100% correct company identification, 100%
+> correct headcount on the 99 it answered, at about a cent per company. See
+> [`benchmark/`](benchmark/) for the method, the raw results, and the ground
+> truth. The email-deliverability and still-employed plays are named on the
+> card but not yet built.
 
 A Tier 0 CRM data-quality audit. Point it at a CRM CSV export and it produces
 a report card: an overall letter grade, six deterministic FACTs (duplicates,

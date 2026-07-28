@@ -137,6 +137,41 @@ later.
 This amendment is recorded in its own commit, before ground truth exists, so it cannot
 have been chosen to flatter a result nobody has seen yet.
 
+## Corrections made to the ground truth after results were visible
+
+Four of the 100 ground-truth rows were corrected after provider results had
+been seen. This is the single most attackable thing in this benchmark, so it is
+stated here rather than left for a reader to find.
+
+Every correction is an appended row in `ground_truth.jsonl` with its reason, and
+the file is append-only with last-row-wins, so the original value and the
+correction are both in the record and in git history.
+
+| Row | Recorded first | Corrected to | Why |
+|---|---|---|---|
+| close.com | visionet-systems-inc- | close-crm | The wrong candidate was confirmed during review |
+| copper.com | gulfcopper | copper-inc | Gulf Copper is an unrelated company |
+| cal.com | globalstaffingsupport | cal-com | The wrong candidate was confirmed during review |
+| clay.com | clay-run | grow-with-clay | Owner confirmed grow-with-clay is Clay's page; the recorded People count already matched it, so only the URL field was wrong |
+
+**The corrections cut both ways, which is the point.** The first three moved
+PeopleDataLabs from 92.9% to 96.0% identity, because it had those three right and
+was being penalized by the bad reference. The fourth moved it back down from 96.0%
+to 94.9%, because it had resolved clay.com to clay-run. Over the same four rows
+the Sculpted play moved from 91.9% to 98.0% and Exa from 99.0% to 100.0%.
+
+**How they were found.** Three surfaced when the play's answers were compared
+against the reference and the disagreements were inspected by hand; the reference
+turned out to be wrong rather than the play. The fourth was raised by the repo
+owner directly. All four were corrected before the final run.
+
+**The honest risk.** Correcting a reference after seeing which contestants
+disagree with it is a route to fitting the reference to a favoured result. The
+defences here are that every correction is individually checkable against a live
+LinkedIn page, the reasons are recorded, the corrections demonstrably hurt one
+contestant as well as helping others, and the raw provider outputs are published
+so anyone can rescore against the original values if they disagree.
+
 ## Scoring
 
 Headcount is not a point value: a company with 480 employees may honestly report 500.
