@@ -63,27 +63,39 @@ this product exists to measure.
 
 ## Ground truth
 
-**Amended 2026-07-27, before any provider was run.** The original method had an agent
-assemble ground truth with a 20-row hand audit. It is replaced by a stronger one: the
-operator hand-verifies all 100 companies personally. An agent pass audited on 20 rows
-is weaker than 100 rows of human verification, so this raises the bar rather than
-lowering it. The amendment is recorded here, in its own commit, because the
-pre-registration binds us to changing the method in public or not at all.
+**Amended 2026-07-28, before any truth was recorded, replacing the earlier
+non-LinkedIn rule.** Truth for the employee count is **the LinkedIn company
+People-tab count**, read by a human.
 
-Truth comes from sources **no contestant uses**, in this priority order:
+The earlier version of this document excluded LinkedIn as a truth source on the
+grounds that one contestant reads LinkedIn and scoring against it would be
+circular. That reasoning was wrong about what the market actually is. B2B
+firmographic providers overwhelmingly derive headcount from LinkedIn-sourced
+profile data. If the providers are approximating LinkedIn, then LinkedIn is the
+reference they are all approximating, and measuring distance from it is measuring
+the thing buyers care about: how stale and how wrong is the copy you are paying
+for.
 
-1. A regulatory filing where one exists (SEC, Companies House, and equivalents).
-2. The company's own public statement: an about page, careers page, or press kit.
-3. A dated, credible third-party report that cites a primary source.
+**The consequence must be stated wherever these results are published, and is
+stated here first:** the Sculpted play reads the LinkedIn People count directly.
+Scoring it against the LinkedIn People count therefore measures its reading
+fidelity, not its independent correctness. A high score for the Sculpted play is
+EXPECTED, is not a finding, and must never be presented as one. The findings are
+the other providers' distance from the reference, and their cost per correct
+answer. Any write-up that reports the Sculpted play's accuracy without this
+sentence attached is misrepresenting the benchmark.
 
-**LinkedIn is excluded as a truth source**, since a contestant reads it. Provider
-outputs are excluded, obviously.
+A second, optional truth value is recorded where a human can find one: an
+`independent_count` from a non-LinkedIn source (the company's own about or
+careers page, or a filing) with its citation. It will be present for some
+companies and absent for others. Where present, accuracy is reported against it
+as a secondary table. That table is the closest thing here to a source-neutral
+accuracy measure, and it is reported on whatever subset exists rather than
+extrapolated.
 
-Every ground-truth record carries a citation URL and the date the claim was made. A
-company for which no citable source can be found is marked `no-ground-truth` and is
-excluded from accuracy scoring for every provider equally. That exclusion count is
-published, because a benchmark that quietly drops the rows nobody can verify is
-overstating what it measured.
+A company whose LinkedIn page cannot be identified at all is recorded as
+`no-ground-truth` and excluded from count scoring for every provider equally,
+with the exclusion count published.
 
 ### Anchoring control
 
@@ -160,6 +172,11 @@ Reported per provider:
   metric that actually decides what to buy, and it is the headline.
 - **Accuracy by tier**, so a provider that is excellent on well-known companies and
   useless on the hard tier cannot hide behind an average.
+- **Magnitude of error when wrong**: median absolute difference and median ratio
+  against the reference count. Band distance is deliberately coarse and hides how
+  wrong a wrong answer is. A provider that says 41 when the answer is 1,214 and one
+  that says 900 when the answer is 1,214 are both "wrong by bands" and are not the
+  same product.
 
 A provider that answers 40% of rows perfectly and one that answers 100% at 80%
 accuracy are different products. Reporting coverage and accuracy separately is the
