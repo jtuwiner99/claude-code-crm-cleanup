@@ -36,6 +36,40 @@ workspace not being provisioned for it, or a broken integration. Reporting it as
 a product failure would be a claim we cannot support. It has been raised with
 Deepline instead.
 
+## What this means if you are buying
+
+Three claims the data supports, and one it does not.
+
+**Only one contestant got both dimensions right on every row it answered.** Six
+providers were tested. Three resolved the company perfectly and then missed the
+headcount by a quarter or more; one nailed the headcount and missed companies;
+one cannot return a number at all. The Sculpted play is the only one at 100% on
+both. That is the claim worth making, and it is narrower and more defensible
+than "most accurate", because on identity alone it is a tie.
+
+**It is the cheapest by a wide margin.** $0.010 per correct answer against a
+next-best of $0.035 and $0.209 for the most expensive provider tested. Three and
+a half times cheaper than the closest competitor, twenty-one times cheaper than
+PeopleDataLabs.
+
+**It returns an exact headcount, not a band.** That matters when a routing rule
+cuts at a threshold: a record at 99 employees goes one way and 101 the other, and
+a provider that answers "51-200" cannot serve that rule at any accuracy level.
+Crustdata is the only contestant that cannot. PeopleDataLabs, limadata, leadmagic
+and enrich_company all return exact numbers too, so this separates the field from
+one competitor rather than from all of them.
+
+**What it is NOT better at: resolving the right LinkedIn company page.** The
+Sculpted play resolves 100 of 100, and so do PeopleDataLabs and leadmagic, and so
+does a bare Exa call. Identity is a tie at the top of the field, not a win. Any
+write-up claiming an identity advantage is overstating what was measured.
+
+**And the count result carries its caveat permanently.** The reference is the
+LinkedIn People count and this play reads that source, so its 0.0% median error
+is reading fidelity. The meaningful comparison is between the providers that do
+not read it: 1.3% for Deepline's native enricher, 6.2% for limadata, 24.7% for
+PeopleDataLabs, 27.0% for leadmagic.
+
 ## The resolver question, separately
 
 Getting a headcount from a domain is two jobs: find the company's LinkedIn page,

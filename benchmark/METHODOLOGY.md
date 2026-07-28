@@ -27,6 +27,18 @@ reported alongside the number it replaced.
 Given only a company's domain, how accurately can each provider tell you how many
 people work there, at what cost, and how often does it answer at all?
 
+Three sub-questions, because a single accuracy number hides which of them a
+provider actually fails:
+
+1. **Does it find the right company?** Scored against the LinkedIn company page a
+   human confirmed. Every contestant is given the same domain and no advantage.
+2. **Does it then get the headcount right?** Scored in size bands, strictly, and
+   separately over only the rows where the company was right, so a matching
+   failure is not misreported as a counting failure.
+3. **Does it return an exact number or only a range?** A provider that answers
+   "51-200" cannot serve a routing rule that cuts at 100, at any accuracy level,
+   so this is recorded as a capability rather than folded into an accuracy score.
+
 ## Why we are not a neutral party, and what we did about it
 
 Sculpted's own play is one of the contestants. A benchmark run by a contestant is
