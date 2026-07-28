@@ -17,7 +17,6 @@ domain.
 | **Sculpted play** | 99/100 | 100.0% | **100.0%** | 100.0% | 0.0% | **$0.010** |
 | PeopleDataLabs | 100/100 | 100.0% | 67.7% | 99.0% | **24.7%** | $0.209 |
 | Crustdata | 99/100 | 89.9% | 55.6% | 86.9% | band only | $0.073 |
-| Datagma | **0/100** | n/a | n/a | n/a | n/a | n/a |
 
 **Band correct** means the answer lands in the same size band as the reference.
 **(lenient rule)** is the original rule, which also accepted an adjacent band; it
@@ -25,9 +24,14 @@ is kept because dropping it was a change made after results were visible.
 **Median error** is the median relative distance between a provider's exact
 headcount and the reference.
 
-Datagma is scored `n/a` rather than 0% on purpose. It never returned a value, so
-there is nothing to be right or wrong about; scoring it as 0% accurate would imply
-it answered and answered badly. What it did is described under Findings.
+A fourth provider, `datagma_enrich_company`, was called on all 100 domains and
+returned a null payload every time, with no error. It is excluded from this table
+rather than scored, because **we could not establish whether that is the product
+or our account**. Every call succeeded at the transport level and returned
+nothing, which is equally consistent with the provider having no data, our
+workspace not being provisioned for it, or a broken integration. Reporting it as
+a product failure would be a claim we cannot support. It has been raised with
+Deepline instead.
 
 ## The resolver question, separately
 
@@ -94,10 +98,12 @@ $0.010, a factor of twenty.
 Half its answers are a quarter or more off. The original lenient scoring rule was
 absorbing this entirely, which is why the rule was tightened.
 
-**Datagma returned nothing, 100 times, without an error.** It is listed in the
-catalogue at $0.027 per result. Every call succeeded and every payload was null.
-A provider that silently answers nothing is worse than one that fails loudly,
-because nothing in a pipeline notices.
+**A silent null is worse than a loud failure, whoever is at fault.** One provider
+returned a null payload on all 100 calls without a single error. Whether that is
+the provider, our account, or the integration is unresolved and has been raised
+with Deepline. The transferable lesson is independent of the answer: a pipeline
+that treats "no error" as "it worked" will record a hundred empty results as a
+successful run. Ours only caught it because coverage is a reported column.
 
 **Crustdata cannot answer the question at all if you need a number.** It returned
 an exact headcount on 0 of 100 rows; it only ever answers with a range. If a
