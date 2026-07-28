@@ -12,7 +12,7 @@ Reproduce any number here with `python3 benchmark/score.py`.
 | Contestant | Answered | Right company | Band correct | (lenient rule) | Median error | Cost per correct |
 |---|---|---|---|---|---|---|
 | **Sculpted play** | 99/100 | **100.0%** | **100.0%** | 100.0% | 0.0% | **$0.010** |
-| PeopleDataLabs | 100/100 | 94.9% | 67.7% | 99.0% | **24.7%** | $0.209 |
+| PeopleDataLabs | 100/100 | **100.0%** | 67.7% | 99.0% | **24.7%** | $0.209 |
 | Crustdata | 99/100 | 89.9% | 55.6% | 86.9% | band only | $0.073 |
 | Datagma | 0/100 | n/a | 0.0% | 0.0% | n/a | n/a |
 | Exa (resolver only) | n/a | **100.0%** | n/a | n/a | n/a | n/a |
@@ -32,12 +32,25 @@ correctness, and is not a finding.** It is what "read the source everyone else
 resells" looks like when measured, and it would be dishonest to present it as
 an accuracy discovery.
 
-**Identity is the fair comparison.** Every contestant is given a domain, has to
-resolve it to a company page, and is scored against the same human-confirmed
-answer. Nobody has an advantage there. The Sculpted play and Exa both resolved
-100 of 100. PeopleDataLabs resolved 94.9%, Crustdata 89.9%.
+**Identity is the fair comparison, and on it there is no winner.** Every
+contestant is given a domain, has to resolve it to a company page, and is scored
+against the same human-confirmed answer. The Sculpted play, Exa, and
+PeopleDataLabs all resolved **100 of 100**. Crustdata resolved 89.9%.
+
+An earlier version of this page had PeopleDataLabs at 94.9%. That was wrong. It
+had returned five former-name slugs (`clay-run`, `readme-io`, `braze-`,
+`transferwise`, `messagebird-com`) which still resolve to the pages recorded as
+truth. The methodology already said a redirect is not a failure, but that rule
+was only being applied to domains, not to LinkedIn slugs. Applying it evenly
+removed the Sculpted play's identity advantage entirely. See the alias evidence
+below.
 
 ## Findings
+
+**Finding the right company is a solved problem; knowing how many people work
+there is not.** Three of the five contestants resolved identity perfectly. Only
+one of them then got the headcount right. The interesting failure is not matching,
+it is counting.
 
 **A $0.007 web-search call resolved company identity perfectly.** Exa, given only
 a domain, returned the correct LinkedIn company page for all 100 companies across
@@ -91,23 +104,33 @@ copper.com       -> gulfcopper
 close.com        -> visionet-systems-inc-
 ```
 
-**PeopleDataLabs, 5 identity misses**, and in fairness **two or three are
-arguable rather than wrong**:
+**PeopleDataLabs, 0 identity misses after the redirect rule was applied to
+slugs.** Its five apparent misses were former-name pages that still resolve:
 
 ```
-clay.com    -> clay-run          (truth: grow-with-clay)
-readme.com  -> readme-io         (truth: readme)
-braze.com   -> braze-            (truth: braze)
-wise.com    -> transferwise      (truth: wiseaccount)
-bird.com    -> messagebird-com   (truth: birdhq)
+clay.com     -> clay-run          resolves to grow-with-clay
+readme.com   -> readme-io         resolves to readme
+braze.com    -> braze-            resolves to braze
+wise.com     -> transferwise      resolves to wiseaccount
+bird.com     -> messagebird-com   resolves to birdhq
 ```
 
-`braze-` differs from `braze` by a trailing character. `transferwise` is Wise's
-former name and `messagebird-com` is Bird's; both are real pages for the same
-businesses. A reviewer could reasonably score two or three of these as correct,
-which would put PeopleDataLabs at 97-98% identity rather than 94.9%. The strict
-reading is used because it was applied identically to every contestant, but the
-ambiguity is real and is stated here rather than left to be discovered.
+**How the aliases were tested, and the limits of that test.** Every disputed slug
+was scraped. Each of the five above returned no distinct company while its
+counterpart returned one, which is what an alias looks like. This is indirect
+evidence, the absence of a separate entity rather than an observed redirect, and
+is recorded as such in `score.py`.
+
+The same test refused two pairs that look like aliases and are not:
+
+```
+birdapp      id 18359698   "Bird"          is NOT birdhq   id 2783482  "Bird"
+notionhq-kr  id 102055240  "Notion Korea"  is NOT notionhq id 30898036 "Notion"
+```
+
+So Crustdata's `notionhq-kr` on `notion.so` is a genuine miss: Notion Korea is a
+real, separate company page, and HarvestAPI's `birdapp` on `bird.com` is the
+scooter company rather than the messaging one.
 
 **The Sculpted play, 0 identity misses.** Its single unanswered row is
 `segment.com`, which it declined rather than guessed.
@@ -133,6 +156,9 @@ not enough to separate 98% from 97%.
   numbers are published above for that reason.
 - The Sculpted play reads the reference source, so its count score is not an
   independent accuracy measurement.
+- **The LinkedIn slug alias rule was added after results were visible**, and it
+  cost the Sculpted play its identity advantage rather than helping it. The
+  evidence for each alias is indirect and is described above.
 
 ## Raw data
 

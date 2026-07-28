@@ -82,6 +82,28 @@ def answer_band(pr: dict) -> int | None:
     return band_index(label)
 
 
+# LinkedIn slugs that resolve to the same company page as another slug. The
+# methodology already says a redirect is not a failure; that rule was being
+# applied to domains but not to LinkedIn slugs, which penalised providers for
+# returning a former name that still resolves.
+#
+# Evidence, 2026-07-28: each left-hand slug was scraped and returned no distinct
+# company, while its right-hand counterpart returned one, which is what an alias
+# looks like. This is indirect (absence of a separate entity, not an observed
+# 301) so it is recorded here rather than asserted as certain.
+#
+# Two pairs that LOOK like aliases were tested and are NOT, so they stay wrong:
+#   birdapp     (id 18359698, "Bird")         is a different company from birdhq
+#   notionhq-kr (id 102055240, "Notion Korea") is a regional entity, not notionhq
+SLUG_ALIASES = {
+    "clay-run": "grow-with-clay",
+    "readme-io": "readme",
+    "braze-": "braze",
+    "transferwise": "wiseaccount",
+    "messagebird-com": "birdhq",
+}
+
+
 def slug(url: str) -> str:
     """Normalized LinkedIn company slug, so trailing slashes, www, and scheme
     differences do not read as different companies."""
@@ -92,7 +114,8 @@ def slug(url: str) -> str:
     u = re.sub(r"^www\.", "", u)
     u = u.split("?")[0].rstrip("/")
     m = re.search(r"linkedin\.com/company/([^/]+)", u)
-    return m.group(1) if m else u
+    found = m.group(1) if m else u
+    return SLUG_ALIASES.get(found, found)
 
 
 def load_truth(path: str) -> dict:
