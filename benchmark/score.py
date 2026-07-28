@@ -37,7 +37,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # figure is the whole chain (icypeas + batched Apify scrape + AI verification)
 # over 100 companies.
 COST_PER_CALL_USD = {
-    "ourplay": 0.0179,
+    # Measured from the billing ledger of the single-resolver run on 2026-07-28:
+    # 100 companies, 12.02 credits, $1.03 total. The earlier $0.0179 was the
+    # two-round icypeas+exa chain this replaced.
+    "ourplay": 0.0103,
     "peopledatalabs": 0.14,
     "crustdata": 0.04,
     "datagma": 0.027,
